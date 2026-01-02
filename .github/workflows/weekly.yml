@@ -11,6 +11,7 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
+    environment: YT_API_KEY
 
     steps:
       - name: Checkout
@@ -31,7 +32,7 @@ jobs:
       # ★ 依存インストール後に実行
       - name: Run weekly script
         env:
-          YT_API_KEY: ${{ secrets.YT_API_KEY }}
+          YT_API_KEY: ${{ vars.YT_API_KEY }}
         run: python tools/run_weekly.py
 
       - name: Sync data to site/data
