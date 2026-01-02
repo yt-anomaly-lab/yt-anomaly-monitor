@@ -1,4 +1,4 @@
-const DATA_BASE = "../data"; // site/ から見た data/（GitHub Pagesデプロイ時に site/data にコピーする方式へ後で変更可）
+const DATA_BASE = "./data"; // site/ から見た data/（GitHub Pagesデプロイ時に site/data にコピーする方式へ後で変更可）
 
 const el = (id) => document.getElementById(id);
 const channelListEl = el("channelList");
