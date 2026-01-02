@@ -2,13 +2,10 @@
 
 const DATA_BASE = "./data";
 
-/* =========================
- * ★ パラメータ類（要望(5)）
- * ========================= */
-const PULSE_SPEED = 1.0;     // 1.0=標準。0.5で半分の速さ、2.0で倍速
-const UPPER_MULT  = 1.0;     // 上限倍率の追加係数（baseline.upper_ratio_ref * UPPER_MULT）
+/* ===== 調整パラメータ（あなたの要望） ===== */
+const PULSE_SPEED = 0.65;     // ドクドク速度（小さいほど遅い）
+const UPPER_MULT  = 1.00;     // 上限倍率に掛ける追加係数（データ側 * これ）
 
-/* 点の色 */
 const LABEL_COLOR = {
   NORMAL: "#3b82f6",
   YELLOW: "#facc15",
@@ -21,12 +18,12 @@ const $ = (sel) => document.querySelector(sel);
 const state = {
   index: null,
   currentChannelId: null,
-  mode: "views_days", // "views_days" | "views_likes"
-  yLog: true,         // views_days の縦軸 log on/off
-  inputMode: "select",// "select" | "manual"
+  mode: "views_days",
+  yLog: true,
+  inputMode: "select",
   channelCache: new Map(),
 
-  redPlotPoints: [],  // {x, y, strength}
+  redPlotPoints: [],
   pulseRunning: false,
   pulseT: 0,
   plotEventsAttached: false,
@@ -62,81 +59,43 @@ function pick(obj, keys) {
 }
 
 /* ---------- index.json 互換 ---------- */
-function getChannelId(ch) {
-  return ch?.channel_id || ch?.channelId || ch?.id || "";
-}
-function getChannelTitle(ch) {
-  return ch?.title || ch?.handle || ch?.watch_key || ch?.watchKey || getChannelId(ch) || "(unknown)";
-}
-function getStickyCount(ch) {
-  return safeNum(ch?.sticky_red_count, safeNum(ch?.sticky_red, safeNum(ch?.sticky, 0)));
-}
-function getWorstAnomaly(ch) {
-  return safeNum(ch?.max_anomaly_ratio, safeNum(ch?.worst_anomaly, safeNum(ch?.worst, NaN)));
-}
+function getChannelId(ch) { return ch?.channel_id || ch?.channelId || ch?.id || ""; }
+function getChannelTitle(ch) { return ch?.title || ch?.handle || ch?.watch_key || ch?.watchKey || getChannelId(ch) || "(unknown)"; }
+function getStickyCount(ch) { return safeNum(ch?.sticky_red_count, safeNum(ch?.sticky_red, safeNum(ch?.sticky, 0))); }
+function getWorstAnomaly(ch) { return safeNum(ch?.max_anomaly_ratio, safeNum(ch?.worst_anomaly, safeNum(ch?.worst, NaN))); }
 
-/* ---------- latest_points.json（あなたの形式） ---------- */
+/* ---------- latest_points.json（run_weekly 形式） ---------- */
 function normalizePoints(pointsJson) {
   if (Array.isArray(pointsJson)) return pointsJson;
   if (pointsJson && Array.isArray(pointsJson.points)) return pointsJson.points;
   if (pointsJson && Array.isArray(pointsJson.items)) return pointsJson.items;
   return [];
 }
-
 function getVideoId(p) { return p?.videoId || p?.video_id || p?.id || ""; }
-function getTitle(p)   { return p?.title || "(no title)"; }
+function getTitle(p) { return p?.title || "(no title)"; }
+function getDays(p) { return safeNum(p?.t_days, safeNum(p?.days, NaN)); } // t_days を優先（make_plots）
+function getViews(p) { return safeNum(p?.viewCount, safeNum(p?.views, NaN)); }
+function getLikes(p) { return safeNum(p?.likeCount, safeNum(p?.likes, NaN)); }
+function getLabel(p) { return String(pick(p, ["display_label", "observed_label", "label"]) ?? "NORMAL").toUpperCase(); }
+function getAnomalyRatio(p) { return safeNum(p?.anomaly_ratio, NaN); }
+function getRatioNat(p) { return safeNum(p?.ratio_nat, NaN); }
+function getRatioLike(p) { return safeNum(p?.ratio_like, NaN); }
 
-function getDays(p) {
-  const d = pick(p, ["days", "t_days"]);
-  const dn = safeNum(d, NaN);
-  if (dn >= 0) return dn;
-  const pub = p?.publishedAt;
-  if (!pub) return NaN;
-  const pubMs = Date.parse(pub);
-  if (!Number.isFinite(pubMs)) return NaN;
-  const diff = (Date.now() - pubMs) / (1000 * 60 * 60 * 24);
-  return diff >= 0 ? diff : NaN;
-}
-
-function getViews(p) {
-  const v = pick(p, ["viewCount", "views", "view_count", "viewCount"]);
-  return safeNum(v, NaN);
-}
-function getLikes(p) {
-  const v = pick(p, ["likeCount", "likes", "like_count", "likeCount"]);
-  return safeNum(v, NaN);
-}
-function getLabel(p) {
-  return String(pick(p, ["display_label", "observed_label", "label"]) ?? "NORMAL").toUpperCase();
-}
-function getAnomalyRatio(p) {
-  return safeNum(pick(p, ["anomaly_ratio", "anomalyRatio"]) ?? NaN, NaN);
-}
-function getRatioNat(p) {
-  return safeNum(pick(p, ["ratio_nat"]) ?? NaN, NaN);
-}
-function getRatioLike(p) {
-  return safeNum(pick(p, ["ratio_like"]) ?? NaN, NaN);
-}
-
-/* ---------- 入力モード切替（要望(3)） ---------- */
+/* ---------- 入力モード（既存UIを維持） ---------- */
 function setInputMode(mode) {
   state.inputMode = mode;
   $("#btnInputSelect")?.classList.toggle("active", mode === "select");
   $("#btnInputManual")?.classList.toggle("active", mode === "manual");
-
   $("#selectBox")?.classList.toggle("hidden", mode !== "select");
   $("#manualBox")?.classList.toggle("hidden", mode !== "manual");
 }
+function showManualHint(msg) { const el = $("#manualHint"); if (el) el.textContent = msg || ""; }
 
 function findChannelIdByManualInput(raw) {
   const s = String(raw || "").trim();
   if (!s) return null;
-
-  // UC... はそのまま
   if (s.startsWith("UC")) return s;
 
-  // @handle の場合: index.json の watch_key / handle / title で探す（静的なので監視済みのみ）
   const key = s.toLowerCase();
   const arr = Array.isArray(state.index?.channels) ? state.index.channels : [];
   const hit = arr.find(ch => {
@@ -148,26 +107,18 @@ function findChannelIdByManualInput(raw) {
   return hit ? getChannelId(hit) : null;
 }
 
-function showManualHint(msg) {
-  const el = $("#manualHint");
-  if (el) el.textContent = msg || "";
-}
-
 /* ---------- UI ---------- */
 function renderChannelList(index) {
   const root = $("#channelList");
   if (!root) return;
   root.innerHTML = "";
-
   const arr = Array.isArray(index?.channels) ? index.channels : [];
   arr.slice(0, 60).forEach((ch) => {
     const div = document.createElement("div");
     div.className = "item";
-
     const title = getChannelTitle(ch);
     const worst = getWorstAnomaly(ch);
     const sticky = getStickyCount(ch);
-
     div.innerHTML = `
       <div class="t">${escapeHtml(title)}</div>
       <div class="m">worst: ${Number.isFinite(worst) ? worst.toFixed(2) : "?"} / sticky_red: ${sticky}</div>
@@ -184,7 +135,6 @@ function renderChannelSelect(index) {
   const sel = $("#channelSelect");
   if (!sel) return;
   sel.innerHTML = "";
-
   const arr = Array.isArray(index?.channels) ? index.channels : [];
   arr.forEach((ch) => {
     const opt = document.createElement("option");
@@ -192,7 +142,6 @@ function renderChannelSelect(index) {
     opt.textContent = `${getChannelTitle(ch)} (sticky_red=${getStickyCount(ch)})`;
     sel.appendChild(opt);
   });
-
   sel.addEventListener("change", () => {
     const id = sel.value;
     if (id) setChannel(id);
@@ -203,11 +152,9 @@ function updateYScaleButtons() {
   const btnLog = $("#btnYLog");
   const btnLin = $("#btnYLin");
   if (!btnLog || !btnLin) return;
-
   const enabled = (state.mode === "views_days");
   btnLog.disabled = !enabled;
   btnLin.disabled = !enabled;
-
   btnLog.classList.toggle("active", enabled && state.yLog);
   btnLin.classList.toggle("active", enabled && !state.yLog);
 }
@@ -217,7 +164,6 @@ function setMode(mode) {
   $("#btnViewsDays")?.classList.toggle("active", mode === "views_days");
   $("#btnViewsLikes")?.classList.toggle("active", mode === "views_likes");
   updateYScaleButtons();
-
   if (state.currentChannelId) {
     const cached = state.channelCache.get(state.currentChannelId);
     if (cached) drawPlot(cached);
@@ -227,7 +173,6 @@ function setMode(mode) {
 function setYLog(on) {
   state.yLog = !!on;
   updateYScaleButtons();
-
   if (state.mode !== "views_days") return;
   if (state.currentChannelId) {
     const cached = state.channelCache.get(state.currentChannelId);
@@ -235,6 +180,7 @@ function setYLog(on) {
   }
 }
 
+/* ---------- load ---------- */
 async function loadChannelBundle(channelId) {
   if (state.channelCache.has(channelId)) return state.channelCache.get(channelId);
 
@@ -263,10 +209,23 @@ async function setChannel(channelId) {
   renderRedList(bundle);
 }
 
-/* =========================
- * 期待線描画（要望(1)(2)）
- * ========================= */
+function renderBaselineInfo(bundle) {
+  const b = bundle?.latest?.baseline || {};
+  const title = bundle?.channel?.title || state.currentChannelId || "(unknown)";
+  const a = safeNum(b?.a_days, NaN);
+  const bb = safeNum(b?.b_days, NaN);
+  const b0 = safeNum(b?.b0, NaN);
+  const b1 = safeNum(b?.b1, NaN);
+  const up = safeNum(b?.NAT_UPPER_RATIO, NaN);
+  $("#baselineInfo").textContent =
+    `Channel: ${title}` +
+    ` / nat: log10(V)=a+b*days (a=${Number.isFinite(a)?a.toFixed(3):"?"}, b=${Number.isFinite(bb)?bb.toExponential(2):"?"})` +
+    ` / like: log10(V)=b0+b1*log10(L) (b0=${Number.isFinite(b0)?b0.toFixed(3):"?"}, b1=${Number.isFinite(b1)?b1.toFixed(3):"?"})` +
+    ` / upper=${Number.isFinite(up)?up.toFixed(2):"?"}*${UPPER_MULT.toFixed(2)}` +
+    ` / pulse=${PULSE_SPEED.toFixed(2)}`;
+}
 
+/* ---------- baseline lines（make_plots 完全一致） ---------- */
 function linspace(xmin, xmax, n) {
   if (n <= 1) return [xmin];
   const arr = [];
@@ -287,74 +246,64 @@ function logspace(xmin, xmax, n) {
 
 function buildBaselineTraces(mode, rows, baseline) {
   if (!rows.length) return [];
-
-  const N = 180;
-
-  // 上限倍率（フロント側で追加係数を掛ける）
-  const upperRatio = safeNum(baseline?.upper_ratio_ref, NaN) * UPPER_MULT;
+  const N = 400;
 
   if (mode === "views_days") {
-    // ★ log-リニア: log10(Views) = a + b*days  （make_plots.py準拠） :contentReference[oaicite:4]{index=4}
-    const a = safeNum(baseline?.nat_a, NaN);
-    const b = safeNum(baseline?.nat_b, NaN);
-    if (!(Number.isFinite(a) && Number.isFinite(b))) return [];
+    const a = safeNum(baseline?.a_days, NaN);
+    const b = safeNum(baseline?.b_days, NaN);
+    const NAT_UP = safeNum(baseline?.NAT_UPPER_RATIO, NaN) * UPPER_MULT;
+    if (!(Number.isFinite(a) && Number.isFinite(b) && Number.isFinite(NAT_UP))) return [];
 
-    const daysArr = rows.map(getDays).filter(v => v >= 0);
-    if (!daysArr.length) return [];
+    // make_plots: t_line = linspace(1, t.max(), 400) :contentReference[oaicite:14]{index=14}
+    const daysArr = rows.map(getDays).filter(v => Number.isFinite(v));
+    const tmax = Math.max(...daysArr, 1);
+    const t_line = linspace(1, tmax, N);
 
-    const xmin = Math.max(0, Math.min(...daysArr));
-    const xmax = Math.max(...daysArr);
-    const xs = linspace(xmin, xmax, N);
+    const log_center = t_line.map(t => a + b * t);
+    const log_upper  = log_center.map(lv => lv + Math.log10(NAT_UP)); // ★log空間で +log10 :contentReference[oaicite:15]{index=15}
 
-    const center = xs.map(d => Math.pow(10, a + b * d));
-    const traces = [
-      { type:"scatter", mode:"lines", name:"expected", x:xs, y:center, hoverinfo:"skip", line:{ width:2, dash:"solid" } }
+    const v_center = log_center.map(lv => Math.pow(10, lv));
+    const v_upper  = log_upper.map(lv => Math.pow(10, lv));
+
+    return [
+      { type:"scatter", mode:"lines", name:"expected", x:t_line, y:v_center, hoverinfo:"skip", line:{ width:2, dash:"solid" } },
+      { type:"scatter", mode:"lines", name:"upper",    x:t_line, y:v_upper,  hoverinfo:"skip", line:{ width:2, dash:"dot" } },
     ];
-    if (upperRatio > 0) {
-      traces.push({
-        type:"scatter", mode:"lines", name:"upper",
-        x: xs, y: center.map(v => v * upperRatio),
-        hoverinfo:"skip", line:{ width:2, dash:"dot" }
-      });
-    }
-    return traces;
   }
 
-  // views_likes
-  // ★ logL→logV回帰: log10(Views) = b0 + b1*log10(Likes) （make_plots.py準拠） :contentReference[oaicite:5]{index=5}
-  const b0 = safeNum(baseline?.like_b0, NaN);
-  const b1 = safeNum(baseline?.like_b1, NaN);
+  // views_likes:
+  const b0 = safeNum(baseline?.b0, NaN);
+  const b1 = safeNum(baseline?.b1, NaN);
+  const NAT_UP = safeNum(baseline?.NAT_UPPER_RATIO, NaN) * UPPER_MULT; // 上限は右へ
   if (!(Number.isFinite(b0) && Number.isFinite(b1))) return [];
 
   const likesArr = rows.map(getLikes).filter(v => v > 0);
   if (!likesArr.length) return [];
+  const lmin = Math.min(...likesArr);
+  const lmax = Math.max(...likesArr);
 
-  const ymin = Math.min(...likesArr);
-  const ymax = Math.max(...likesArr);
+  // make_plots: x_line2 = linspace(logL.min, logL.max), y_line2=b0+b1*x_line2
+  const logL_line = linspace(Math.log10(lmin), Math.log10(lmax), 300);
+  const logV_line = logL_line.map(x => b0 + b1 * x);
 
-  const ys = logspace(ymin, ymax, N);            // y=likes
-  const xs = ys.map(l => Math.pow(10, b0 + b1 * Math.log10(l))); // x=expected views given likes
+  const views_line = logV_line.map(lv => Math.pow(10, lv)); // x=views
+  const likes_line = logL_line.map(ll => Math.pow(10, ll)); // y=likes
 
   const traces = [
-    { type:"scatter", mode:"lines", name:"expected", x:xs, y:ys, hoverinfo:"skip", line:{ width:2, dash:"solid" } }
+    { type:"scatter", mode:"lines", name:"expected", x:views_line, y:likes_line, hoverinfo:"skip", line:{ width:2, dash:"solid" } },
   ];
 
-  if (upperRatio > 0) {
-    // 上限は「期待Views * upperRatio」（右側へ）
-    const xsUpper = xs.map(v => v * upperRatio);
+  if (Number.isFinite(NAT_UP)) {
     traces.push({
       type:"scatter", mode:"lines", name:"upper",
-      x: xsUpper, y: ys,
+      x: views_line.map(v => v * NAT_UP), y: likes_line,
       hoverinfo:"skip", line:{ width:2, dash:"dot" }
     });
   }
   return traces;
 }
 
-/* =========================
- * ドクドク（赤点に重ねる）
- * ========================= */
-
+/* ---------- pulse overlay（現状維持） ---------- */
 function computeRedPlotPoints(rows, mode) {
   const red = [];
   for (const p of rows) {
@@ -362,14 +311,12 @@ function computeRedPlotPoints(rows, mode) {
     const isRed = (label === "RED") || (p?.sticky_red === true);
     if (!isRed) continue;
 
-    const views = getViews(p);
-    const likes = getLikes(p);
-    const days  = getDays(p);
+    const v = getViews(p);
+    const l = getLikes(p);
+    const d = getDays(p);
 
     let x, y;
-    if (mode === "views_days") { x = days;  y = views; }
-    else { x = views; y = likes; }
-
+    if (mode === "views_days") { x = d; y = v; } else { x = v; y = l; }
     if (!(x >= 0 && y > 0)) continue;
 
     const ar = getAnomalyRatio(p);
@@ -385,13 +332,11 @@ function syncPulseCanvasToPlot() {
   if (!gd || !c || !gd._fullLayout) return;
 
   const fl = gd._fullLayout;
-  const sz = fl._size; // {l,t,w,h}
+  const sz = fl._size;
   if (!sz) return;
 
   c.style.left = `${sz.l}px`;
   c.style.top  = `${sz.t}px`;
-  c.style.right = "auto";
-  c.style.bottom = "auto";
   c.style.width  = `${sz.w}px`;
   c.style.height = `${sz.h}px`;
   c.style.position = "absolute";
@@ -445,7 +390,6 @@ function drawPulses() {
     if (!(x >= -50 && x <= w + 50 && y >= -50 && y <= h + 50)) continue;
 
     const phase = (i * 17) % 97;
-    // ★速度パラメータ（要望(5)）
     const beat = 0.5 + 0.5 * Math.sin((t * 0.22 * PULSE_SPEED) + phase) * Math.sin((t * 0.07 * PULSE_SPEED) + phase * 0.3);
 
     const alpha = (0.10 + 0.28 * p.strength) * beat;
@@ -456,7 +400,6 @@ function drawPulses() {
     ctx.globalAlpha = alpha;
     ctx.strokeStyle = "rgba(255, 80, 80, 1)";
     ctx.lineWidth = Math.max(1, Math.floor(2 * dpr));
-
     for (let k = 0; k < 3; k++) {
       const rr = baseR + k * gap;
       ctx.beginPath();
@@ -492,43 +435,18 @@ function attachPlotEventsOnce() {
   window.addEventListener("resize", () => syncPulseCanvasToPlot());
 }
 
-/* ---------- 描画本体 ---------- */
-
-function renderBaselineInfo(bundle) {
-  const b = bundle?.latest?.baseline || {};
-  const title = bundle?.channel?.title || state.currentChannelId || "(unknown)";
-
-  const natA = safeNum(b.nat_a, NaN);
-  const natB = safeNum(b.nat_b, NaN);
-  const likeB0 = safeNum(b.like_b0, NaN);
-  const likeB1 = safeNum(b.like_b1, NaN);
-  const upper = safeNum(b.upper_ratio_ref, NaN);
-
-  $("#baselineInfo").textContent =
-    `Channel: ${title}` +
-    ` / upper=${Number.isFinite(upper) ? upper.toFixed(2) : "?"} * ${UPPER_MULT.toFixed(2)}` +
-    ` / nat(a,b)=(${Number.isFinite(natA)?natA.toFixed(3):"?"}, ${Number.isFinite(natB)?natB.toExponential(2):"?"})` +
-    ` / like(b0,b1)=(${Number.isFinite(likeB0)?likeB0.toFixed(3):"?"}, ${Number.isFinite(likeB1)?likeB1.toFixed(3):"?"})` +
-    ` / y=${state.mode==="views_days" ? (state.yLog?"log":"linear") : "log"}` +
-    ` / pulse_speed=${PULSE_SPEED.toFixed(2)}`;
-}
-
+/* ---------- main plot ---------- */
 async function drawPlot(bundle) {
   const points = Array.isArray(bundle?.points) ? bundle.points : [];
   const baseline = bundle?.latest?.baseline || {};
 
-  // 表示対象（log軸の時は >0 必須）
   const rows = points.filter(p => {
     const v = getViews(p);
     const l = getLikes(p);
     const d = getDays(p);
-
-    if (!(v > 0)) return false;
-
-    if (state.mode === "views_days") {
-      return d >= 0;
-    }
-    return l > 0;
+    if (!(v > 0 && l > 0)) return false;
+    if (state.mode === "views_days") return d >= 1; // make_plots: clip(lower=1)
+    return true;
   });
 
   const xs = [];
@@ -540,27 +458,22 @@ async function drawPlot(bundle) {
   for (const p of rows) {
     const id = getVideoId(p);
     const title = getTitle(p);
-
     const d = getDays(p);
     const v = getViews(p);
     const l = getLikes(p);
-
     const label = getLabel(p);
     const ar = getAnomalyRatio(p);
     const rn = getRatioNat(p);
     const rl = getRatioLike(p);
 
     let x, y;
-    if (state.mode === "views_days") { x = d; y = v; }
-    else { x = v; y = l; }
+    if (state.mode === "views_days") { x = d; y = v; } else { x = v; y = l; }
 
     xs.push(x);
     ys.push(y);
-
     colors.push(LABEL_COLOR[label] || "#94a3b8");
     sizes.push(label === "RED" ? 9 : (label === "ORANGE" ? 7 : 6));
 
-    const url = youtubeUrl(id);
     hover.push([
       `<b>${escapeHtml(title)}</b>`,
       `label: <b>${escapeHtml(label)}</b>`,
@@ -570,7 +483,7 @@ async function drawPlot(bundle) {
       `ratio_nat: ${Number.isFinite(rn) ? rn.toFixed(2) : "?"}`,
       `ratio_like: ${Number.isFinite(rl) ? rl.toFixed(2) : "?"}`,
       `anomaly_ratio: ${Number.isFinite(ar) ? ar.toFixed(2) : "?"}`,
-      `<a href="${url}" target="_blank" rel="noreferrer">open</a>`,
+      `<a href="${youtubeUrl(id)}" target="_blank" rel="noreferrer">open</a>`,
     ].join("<br>"));
   }
 
@@ -593,12 +506,10 @@ async function drawPlot(bundle) {
     plot_bgcolor: "rgba(0,0,0,0)",
     showlegend: true,
     legend: { orientation: "h", x: 0, y: 1.1 },
-    xaxis: {},
-    yaxis: {},
   };
 
   if (state.mode === "views_days") {
-    layout.title = { text: "流入（x: days linear固定 / y: log切替）", x: 0.02 };
+    layout.title = { text: "流入（x: linear固定 / y: log切替）", x: 0.02 };
     layout.xaxis = { title: "days since publish", type: "linear", gridcolor: "rgba(255,255,255,0.06)" };
     layout.yaxis = { title: "views", type: state.yLog ? "log" : "linear", gridcolor: "rgba(255,255,255,0.06)" };
   } else {
@@ -640,7 +551,7 @@ function renderRedList(bundle) {
   }
 
   const list = redTop.slice(0, 30).map((x) => {
-    const id = getVideoId(x) || x.video_id || x.videoId || x.id || "";
+    const id = getVideoId(x) || x.video_id || x.id || "";
     return lookup.get(id) || x;
   });
 
@@ -655,12 +566,11 @@ function renderRedList(bundle) {
     const ar = getAnomalyRatio(p);
     const v = getViews(p);
     const l = getLikes(p);
-    const url = youtubeUrl(id);
 
     const div = document.createElement("div");
     div.className = "item";
     div.innerHTML = `
-      <div class="t"><a href="${url}" target="_blank" rel="noreferrer">${escapeHtml(title)}</a></div>
+      <div class="t"><a href="${youtubeUrl(id)}" target="_blank" rel="noreferrer">${escapeHtml(title)}</a></div>
       <div class="m">anomaly_ratio: ${Number.isFinite(ar) ? ar.toFixed(2) : "?"} / views: ${Number.isFinite(v) ? fmtInt(v) : "?"} / likes: ${Number.isFinite(l) ? fmtInt(l) : "?"}</div>
     `;
     root.appendChild(div);
@@ -676,12 +586,11 @@ async function boot() {
 
   $("#btnInputSelect")?.addEventListener("click", () => setInputMode("select"));
   $("#btnInputManual")?.addEventListener("click", () => setInputMode("manual"));
-
   $("#btnLoadInput")?.addEventListener("click", async () => {
     const raw = $("#channelInput")?.value || "";
     const id = findChannelIdByManualInput(raw);
     if (!id) {
-      showManualHint("未監視のため表示できません（watchlistに追加して次回weeklyで生成してください）");
+      showManualHint("未監視のため表示できません（watchlistに追加→次回weeklyで生成）");
       return;
     }
     showManualHint("");
@@ -693,18 +602,12 @@ async function boot() {
 
   const index = await fetchJson(`${DATA_BASE}/index.json`);
   state.index = index;
-
   renderChannelList(index);
   renderChannelSelect(index);
 
   const first = Array.isArray(index?.channels) ? index.channels[0] : null;
   const channelId = getChannelId(first);
-
-  if (channelId) {
-    await setChannel(channelId);
-  } else {
-    await Plotly.newPlot("plot", [], { title: "no channel" }, { responsive: true });
-  }
+  if (channelId) await setChannel(channelId);
 }
 
 boot().catch((e) => {

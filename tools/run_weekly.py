@@ -1,520 +1,457 @@
 #!/usr/bin/env python3
-import json
-import os
-import sys
-import time
-import math
-import urllib.parse
-import urllib.request
-from dataclasses import dataclass
+import os, json, time, math
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from pathlib import Path
 
-WATCHLIST_PATH = "data/watchlist.txt"
-WATCHLIST_AUTO_PATH = "data/watchlist_auto.txt"
+import requests
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
 
-DATA_ROOT = "data"
-CHANNELS_DIR = os.path.join(DATA_ROOT, "channels")
+# ============================
+# make_plots.py のパラメータ（完全一致）
+# ============================ :contentReference[oaicite:3]{index=3}
+NAT_QUANTILE = 0.6
+NAT_UPPER_RATIO = 3.0
+NAT_BIG_RATIO = 10.0
 
-YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
+LIKES_SUSPECT_RATIO = 3.0
+LIKES_BIG_RATIO = 10.0
 
-# ---- 異常度ラベル閾値（まずは固定で開始。後で“平常ブレ上限×3”方式に差し替え可） ----
-YELLOW_TH = 3.0
-ORANGE_TH = 5.0
-RED_TH = 8.0
+# make_plots.py の fit サンプル選別（完全一致） :contentReference[oaicite:4]{index=4}
+RECENT_DAYS_EXCLUDE = 7
+NAT_BUZZ_TOP_PCT = 95
 
-# 赤追跡上限
-RED_TOP_MAX = 100
+# 運用パラメータ
+MAX_VIDEOS = 500
+RED_TRACK_MAX = 100
 
-# 取得対象本数（直近500）
-LATEST_MAX = 500
+EXCLUDE_SHORTS = True  # make_plots.py は isShort 列があれば除外 :contentReference[oaicite:5]{index=5}
 
-# API間引き
-SLEEP_SEC = 0.08
+YT_API_KEY = os.environ.get("YT_API_KEY", "").strip()
 
-
-@dataclass
-class WatchItem:
-    raw: str
-    kind: str  # "channel_id" or "handle"
-    key: str
-
-
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def ensure_dirs() -> None:
-    os.makedirs(DATA_ROOT, exist_ok=True)
-    os.makedirs(CHANNELS_DIR, exist_ok=True)
+BASE_DIR = Path(__file__).resolve().parents[1]
+DATA_DIR = BASE_DIR / "data"
+SITE_DATA_DIR = BASE_DIR / "site" / "data"
+WATCHLIST = DATA_DIR / "watchlist.txt"
+WATCHLIST_AUTO = DATA_DIR / "watchlist_auto.txt"
 
 
-def read_watchlist(path: str) -> Tuple[List[WatchItem], List[str]]:
-    items: List[WatchItem] = []
-    warnings: List[str] = []
-    if not os.path.exists(path):
-        warnings.append(f"watchlist not found: {path}")
-        return items, warnings
-
-    with open(path, "r", encoding="utf-8") as f:
-        for ln, line in enumerate(f, start=1):
-            s = line.strip()
-            if not s or s.startswith("#"):
-                continue
-            if s.startswith("@"):
-                handle = s[1:].strip()
-                if not handle:
-                    warnings.append(f"line {ln}: invalid handle")
-                    continue
-                items.append(WatchItem(raw=s, kind="handle", key=handle))
-            elif s.startswith("UC"):
-                items.append(WatchItem(raw=s, kind="channel_id", key=s))
-            else:
-                warnings.append(f"line {ln}: unsupported format: {s} (use UC... or @handle)")
-    return items, warnings
-
-
-def write_heartbeat() -> None:
-    payload = {"ok": True, "message": "run_weekly.py ran successfully", "run_at_utc": utc_now_iso()}
-    with open(os.path.join(DATA_ROOT, "heartbeat.json"), "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-
-
-def http_get_json(url: str, timeout: int = 30) -> Dict:
-    req = urllib.request.Request(url, headers={"User-Agent": "yt-anomaly-monitor/0.1"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        body = resp.read()
-    return json.loads(body.decode("utf-8"))
-
-
-def yt_api_key() -> str:
-    key = os.environ.get("YT_API_KEY", "").strip()
-    if not key:
-        raise RuntimeError("YT_API_KEY is not set (env or GitHub Actions secret).")
-    return key
-
-
-def yt_get(endpoint: str, params: Dict[str, str]) -> Dict:
+def yt_get(url, params):
     params = dict(params)
-    params["key"] = yt_api_key()
-    qs = urllib.parse.urlencode(params)
-    url = f"{YOUTUBE_API_BASE}/{endpoint}?{qs}"
-    data = http_get_json(url)
-    time.sleep(SLEEP_SEC)
-    return data
+    params["key"] = YT_API_KEY
+    r = requests.get(url, params=params, timeout=30)
+    r.raise_for_status()
+    return r.json()
 
 
-def save_json(path: str, obj: Dict) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(obj, f, ensure_ascii=False, indent=2)
-
-
-def append_jsonl(path: str, obj: Dict) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(obj, ensure_ascii=False) + "\n")
-
-
-def resolve_channel_id(item: WatchItem) -> Tuple[str, Dict]:
-    if item.kind == "channel_id":
-        info = yt_get("channels", {"part": "snippet,contentDetails,statistics", "id": item.key})
-        if not info.get("items"):
-            raise RuntimeError(f"channel not found: {item.key}")
-        return info["items"][0]["id"], info["items"][0]
-
-    info = yt_get("channels", {"part": "snippet,contentDetails,statistics", "forHandle": item.key})
-    if not info.get("items"):
-        raise RuntimeError(f"channel not found for handle: @{item.key}")
-    return info["items"][0]["id"], info["items"][0]
-
-
-def list_latest_from_uploads(uploads_playlist_id: str, max_results: int) -> List[Dict]:
-    out: List[Dict] = []
-    page_token: Optional[str] = None
-    while len(out) < max_results:
-        batch = min(50, max_results - len(out))
-        params = {
-            "part": "snippet,contentDetails",
-            "playlistId": uploads_playlist_id,
-            "maxResults": str(batch),
-        }
-        if page_token:
-            params["pageToken"] = page_token
-        data = yt_get("playlistItems", params)
-        items = data.get("items", [])
-        out.extend(items)
-        page_token = data.get("nextPageToken")
-        if not page_token or not items:
-            break
-    return out
-
-
-def chunked(lst: List[str], n: int) -> List[List[str]]:
-    return [lst[i : i + n] for i in range(0, len(lst), n)]
-
-
-def parse_iso8601_z(dt_str: str) -> datetime:
-    # 例: 2024-01-01T00:00:00Z
-    if dt_str.endswith("Z"):
-        dt_str = dt_str[:-1] + "+00:00"
-    return datetime.fromisoformat(dt_str)
-
-
-def iso_duration_to_seconds(d: str) -> int:
-    # PT#H#M#S の雑パース（YouTubeのdurationはISO8601）
-    # 例 PT5M13S, PT1H2M, PT30S
-    if not d.startswith("PT"):
+def iso8601_duration_to_seconds(dur: str) -> int:
+    if not dur or not dur.startswith("PT"):
         return 0
-    s = d[2:]
-    num = ""
-    sec = 0
-    h = m = 0
-    for ch in s:
+    dur = dur[2:]
+    n = ""
+    total = 0
+    for ch in dur:
         if ch.isdigit():
-            num += ch
+            n += ch
             continue
-        if not num:
+        if not n:
             continue
-        v = int(num)
-        num = ""
+        v = int(n)
+        n = ""
         if ch == "H":
-            h = v
+            total += v * 3600
         elif ch == "M":
-            m = v
+            total += v * 60
         elif ch == "S":
-            sec = v
-    return h * 3600 + m * 60 + sec
+            total += v
+    return total
 
 
-def fetch_videos_details(video_ids: List[str]) -> Dict[str, Dict]:
-    """
-    videos.list を50件ずつ叩いて、必要項目をvideo_id->dictで返す
-    """
-    out: Dict[str, Dict] = {}
-    for batch in chunked(video_ids, 50):
-        data = yt_get(
-            "videos",
+def resolve_channel_id(watch_key: str) -> str:
+    watch_key = watch_key.strip()
+    if watch_key.startswith("UC"):
+        return watch_key
+    if watch_key.startswith("@"):
+        j = yt_get(
+            "https://www.googleapis.com/youtube/v3/channels",
+            {"part": "id,snippet,contentDetails", "forHandle": watch_key},
+        )
+        items = j.get("items", [])
+        if not items:
+            raise RuntimeError(f"handle not found: {watch_key}")
+        return items[0]["id"]
+    return watch_key
+
+
+def fetch_channel(channel_id: str) -> dict:
+    j = yt_get(
+        "https://www.googleapis.com/youtube/v3/channels",
+        {"part": "id,snippet,contentDetails,statistics", "id": channel_id},
+    )
+    items = j.get("items", [])
+    if not items:
+        raise RuntimeError(f"channel not found: {channel_id}")
+    return items[0]
+
+
+def fetch_latest_playlist_items(uploads_playlist_id: str, max_items=MAX_VIDEOS) -> dict:
+    items = []
+    page_token = None
+    while True:
+        j = yt_get(
+            "https://www.googleapis.com/youtube/v3/playlistItems",
             {
-                "part": "snippet,contentDetails,statistics",
-                "id": ",".join(batch),
-                "maxResults": "50",
+                "part": "snippet,contentDetails",
+                "playlistId": uploads_playlist_id,
+                "maxResults": 50,
+                **({"pageToken": page_token} if page_token else {}),
             },
         )
-        for it in data.get("items", []):
-            out[it["id"]] = it
+        items.extend(j.get("items", []))
+        page_token = j.get("nextPageToken")
+        if not page_token or len(items) >= max_items:
+            break
+        time.sleep(0.05)
+    return {"items": items[:max_items]}
+
+
+def chunked(xs, n):
+    for i in range(0, len(xs), n):
+        yield xs[i : i + n]
+
+
+def fetch_videos(video_ids):
+    out = []
+    for ch in chunked(video_ids, 50):
+        j = yt_get(
+            "https://www.googleapis.com/youtube/v3/videos",
+            {"part": "id,snippet,statistics,contentDetails", "id": ",".join(ch), "maxResults": 50},
+        )
+        out.extend(j.get("items", []))
+        time.sleep(0.05)
     return out
 
 
-def robust_median(values: List[float]) -> float:
-    if not values:
-        return 0.0
-    vs = sorted(values)
-    n = len(vs)
-    mid = n // 2
-    if n % 2 == 1:
-        return float(vs[mid])
-    return 0.5 * (vs[mid - 1] + vs[mid])
+def ensure_dir(p: Path):
+    p.mkdir(parents=True, exist_ok=True)
 
 
-def mad(values: List[float], med: float) -> float:
-    if not values:
-        return 0.0
-    dev = [abs(v - med) for v in values]
-    return robust_median(dev)
+def now_utc():
+    return datetime.now(timezone.utc)
 
 
-def fit_loglog_regression(xs: List[float], ys: List[float]) -> Tuple[float, float]:
-    """
-    log10(y) = a + b*log10(x) の最小二乗（簡易）
-    """
-    if len(xs) < 2:
-        return 0.0, 0.0
-    lx = [math.log10(max(1e-6, x)) for x in xs]
-    ly = [math.log10(max(1e-6, y)) for y in ys]
-    n = len(lx)
-    mx = sum(lx) / n
-    my = sum(ly) / n
-    sxx = sum((x - mx) ** 2 for x in lx)
-    if sxx <= 1e-12:
-        return my, 0.0
-    sxy = sum((lx[i] - mx) * (ly[i] - my) for i in range(n))
-    b = sxy / sxx
-    a = my - b * mx
-    return a, b
-
-
-def predict_from_loglog(a: float, b: float, x: float) -> float:
-    lx = math.log10(max(1e-6, x))
-    ly = a + b * lx
-    return 10 ** ly
-
-
-def load_state(ch_dir: str) -> Dict:
-    p = os.path.join(ch_dir, "state.json")
-    if not os.path.exists(p):
-        return {
-            "sticky_red": {},      # video_id -> {"first_red_at":..., "max_score":..., "max_ratio":...}
-            "red_top": [],         # video_id list
-        }
-    with open(p, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def save_state(ch_dir: str, state: Dict) -> None:
-    save_json(os.path.join(ch_dir, "state.json"), state)
-
-
-def label_from_ratio(r: float) -> str:
-    if r >= RED_TH:
-        return "RED"
-    if r >= ORANGE_TH:
-        return "ORANGE"
-    if r >= YELLOW_TH:
-        return "YELLOW"
-    return "NORMAL"
-
-
-def update_red_sets(state: Dict, video_id: str, ratio: float, run_at: str) -> None:
-    sticky = state.setdefault("sticky_red", {})
-    if ratio >= RED_TH:
-        if video_id not in sticky:
-            sticky[video_id] = {
-                "first_red_at": run_at,
-                "max_ratio": ratio,
-            }
+def copy_tree(src: Path, dst: Path):
+    for p in src.rglob("*"):
+        rel = p.relative_to(src)
+        out = dst / rel
+        if p.is_dir():
+            out.mkdir(parents=True, exist_ok=True)
         else:
-            sticky[video_id]["max_ratio"] = max(sticky[video_id].get("max_ratio", ratio), ratio)
-
-    # red_top は「max_ratio」降順で上位100
-    # stickyに入っているものだけ候補
-    items = list(sticky.items())
-    items.sort(key=lambda kv: kv[1].get("max_ratio", 0.0), reverse=True)
-    state["red_top"] = [vid for vid, _ in items[:RED_TOP_MAX]]
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(p.read_bytes())
 
 
-def write_watchlist_auto(channel_ids: List[str]) -> None:
-    # 手書きwatchlist.txtは触らず、自動生成だけ別ファイルにする
-    lines = ["# auto-generated (channels with sticky RED count >= 3)\n"]
-    for cid in sorted(set(channel_ids)):
-        lines.append(cid + "\n")
-    with open(WATCHLIST_AUTO_PATH, "w", encoding="utf-8") as f:
-        f.writelines(lines)
+def read_watchlist():
+    ensure_dir(DATA_DIR)
+    if not WATCHLIST.exists():
+        WATCHLIST.write_text("", encoding="utf-8")
+    lines = [ln.strip() for ln in WATCHLIST.read_text(encoding="utf-8").splitlines()]
+    return [ln for ln in lines if ln and not ln.startswith("#")]
 
 
-def main() -> None:
-    ensure_dirs()
-    write_heartbeat()
+def compute_points_and_baseline(videos, run_at):
+    rows = []
+    for v in videos:
+        vid = v.get("id")
+        sn = v.get("snippet", {})
+        st = v.get("statistics", {})
+        cd = v.get("contentDetails", {})
 
-    items, warnings = read_watchlist(WATCHLIST_PATH)
+        publishedAt = sn.get("publishedAt")
+        if not publishedAt:
+            continue
 
-    index = {
-        "generated_at_utc": utc_now_iso(),
-        "watch_count": len(items),
-        "warnings": warnings,
-        "channels": [],
+        pub = datetime.fromisoformat(publishedAt.replace("Z", "+00:00"))
+        t_days = (run_at - pub).total_seconds() / (3600 * 24)
+
+        # make_plots.py: clip(lower=1) :contentReference[oaicite:6]{index=6}
+        t_days = max(float(t_days), 1.0)
+
+        viewCount = int(st.get("viewCount", 0) or 0)
+        likeCount = int(st.get("likeCount", 0) or 0)
+
+        durationSec = iso8601_duration_to_seconds(cd.get("duration", ""))
+        isShort = durationSec <= 60
+
+        rows.append(
+            {
+                "video_id": vid,
+                "title": sn.get("title", ""),
+                "publishedAt": publishedAt,
+                "t_days": t_days,
+                "viewCount": viewCount,
+                "likeCount": likeCount,
+                "durationSec": durationSec,
+                "isShort": isShort,
+            }
+        )
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return [], {}
+
+    # make_plots.py: ショート除外（列があるなら） :contentReference[oaicite:7]{index=7}
+    if EXCLUDE_SHORTS and "isShort" in df.columns:
+        df = df[df["isShort"] == False]
+
+    # make_plots.py: view/like ゼロ除外 :contentReference[oaicite:8]{index=8}
+    df = df[(df["viewCount"] > 0) & (df["likeCount"] > 0)]
+    if df.empty:
+        return [], {}
+
+    views = df["viewCount"].to_numpy(dtype=float)
+    likes = df["likeCount"].to_numpy(dtype=float)
+    days = df["t_days"].to_numpy(dtype=float)
+
+    logV = np.log10(views)
+    logL = np.log10(likes)
+
+    # ============================
+    # A) 自然流入：Quantile Regression
+    # log10(Views) = a + b*days
+    # fit_mask: t>7 かつ v<95%tile :contentReference[oaicite:9]{index=9}
+    # ============================
+    t = days.copy()
+    v = views.copy()
+
+    mask_not_recent = t > RECENT_DAYS_EXCLUDE
+    v95 = np.percentile(v, NAT_BUZZ_TOP_PCT)
+    mask_not_top = v < v95
+    fit_mask_nat = mask_not_recent & mask_not_top
+
+    # safety fallback（元コードは想定上十分ある前提だが、ゼロ割回避）
+    if fit_mask_nat.sum() < 5:
+        fit_mask_nat = np.ones_like(t, dtype=bool)
+
+    df_fit = pd.DataFrame({"days": t[fit_mask_nat], "logv": np.log10(v[fit_mask_nat])})
+    model = smf.quantreg("logv ~ days", df_fit)
+    res = model.fit(q=NAT_QUANTILE)
+
+    a_days = float(res.params["Intercept"])
+    b_days = float(res.params["days"])
+
+    # 中心値（全点）
+    logv_center_all = a_days + b_days * t
+    v_center_all = np.power(10.0, logv_center_all)
+    ratio_nat = v / (v_center_all + 1e-9)
+
+    nat_level = np.full(len(df), "", dtype=object)
+    nat_level[ratio_nat >= NAT_BIG_RATIO] = "X"
+    nat_level[(ratio_nat >= NAT_UPPER_RATIO) & (ratio_nat < NAT_BIG_RATIO)] = "△"
+
+    # ============================
+    # B) 高評価→再生：logL → logV OLS
+    # fit_mask: views>=100 かつ views<80%tile :contentReference[oaicite:10]{index=10}
+    # ratio_like = views / V_expected(likes)（右ズレ） :contentReference[oaicite:11]{index=11}
+    # ============================
+    good_mask = views >= 100
+    v80_likes = np.percentile(views, 80)
+    mid_mask = views < v80_likes
+    fit_mask_like = good_mask & mid_mask
+
+    if fit_mask_like.sum() < 5:
+        fit_mask_like = np.ones_like(views, dtype=bool)
+
+    x_fit = logL[fit_mask_like]
+    y_fit = logV[fit_mask_like]
+    A2 = np.vstack([x_fit, np.ones(len(x_fit))]).T
+    b1, b0 = np.linalg.lstsq(A2, y_fit, rcond=None)[0]
+
+    like_b0 = float(b0)
+    like_b1 = float(b1)
+
+    logV_expected = like_b0 + like_b1 * logL
+    V_expected = np.power(10.0, logV_expected)
+    ratio_like = views / (V_expected + 1e-9)
+
+    like_level = np.full(len(df), "", dtype=object)
+    like_level[ratio_like >= LIKES_BIG_RATIO] = "X"
+    like_level[(ratio_like >= LIKES_SUSPECT_RATIO) & (ratio_like < LIKES_BIG_RATIO)] = "△"
+
+    # make_plots.py の合成（そのまま） :contentReference[oaicite:12]{index=12}
+    nat_is_x = nat_level == "X"
+    nat_is_d = nat_level == "△"
+    nat_is_n = ~(nat_is_x | nat_is_d)
+
+    like_is_x = like_level == "X"
+    like_is_d = like_level == "△"
+    like_is_n = ~(like_is_x | like_is_d)
+
+    m_red = nat_is_x & like_is_x
+    m_orange = (nat_is_x & like_is_d) | (nat_is_d & like_is_d) | (nat_is_d & like_is_x) | (nat_is_n & like_is_d)
+    m_yellow = (nat_is_x & like_is_n) | (nat_is_n & like_is_x) | (nat_is_d & like_is_n)
+
+    display = np.full(len(df), "NORMAL", dtype=object)
+    display[m_yellow] = "YELLOW"
+    display[m_orange] = "ORANGE"
+    display[m_red] = "RED"
+
+    anomaly_ratio = np.maximum(ratio_nat, ratio_like)
+
+    points = []
+    for i, row in df.reset_index(drop=True).iterrows():
+        points.append(
+            {
+                "video_id": row["video_id"],
+                "title": row["title"],
+                "publishedAt": row["publishedAt"],
+                "days": float(row["t_days"]),  # フロント互換用（daysでも同値）
+                "t_days": float(row["t_days"]),
+                "viewCount": int(row["viewCount"]),
+                "likeCount": int(row["likeCount"]),
+                "durationSec": int(row["durationSec"]),
+                "isShort": bool(row["isShort"]),
+                "predView": float(v_center_all[i]),
+                "ratio_nat": float(ratio_nat[i]),
+                "ratio_like": float(ratio_like[i]),
+                "anomaly_ratio": float(anomaly_ratio[i]),
+                "display_label": str(display[i]),
+                "sticky_red": False,
+            }
+        )
+
+    baseline = {
+        # そのまま make_plots で出している “係数” と “しきい値” を持つ
+        "nat_quantile": NAT_QUANTILE,
+        "a_days": a_days,
+        "b_days": b_days,
+        "NAT_UPPER_RATIO": NAT_UPPER_RATIO,
+        "NAT_BIG_RATIO": NAT_BIG_RATIO,
+        "b0": like_b0,
+        "b1": like_b1,
+        "LIKES_SUSPECT_RATIO": LIKES_SUSPECT_RATIO,
+        "LIKES_BIG_RATIO": LIKES_BIG_RATIO,
+        "fit_mask": {
+            "RECENT_DAYS_EXCLUDE": RECENT_DAYS_EXCLUDE,
+            "NAT_BUZZ_TOP_PCT": NAT_BUZZ_TOP_PCT,
+            "likes_good_views_min": 100,
+            "likes_mid_views_pct": 80,
+        },
     }
 
-    auto_watch_channels: List[str] = []
+    return points, baseline
 
-    if not items:
-        save_json(os.path.join(DATA_ROOT, "index.json"), index)
-        print("watchlist empty: nothing to fetch")
-        return
 
-    run_at = utc_now_iso()
+def update_state_and_red(points, state_path: Path):
+    prev = {}
+    if state_path.exists():
+        prev = json.loads(state_path.read_text(encoding="utf-8"))
 
-    for it in items:
+    sticky = set(prev.get("sticky_red", []))
+
+    for p in points:
+        if p.get("display_label") == "RED":
+            sticky.add(p["video_id"])
+            p["sticky_red"] = True
+
+    for p in points:
+        if p["video_id"] in sticky:
+            p["sticky_red"] = True
+
+    reds = [p for p in points if p.get("sticky_red") or p.get("display_label") == "RED"]
+    reds.sort(key=lambda x: x.get("anomaly_ratio", 0.0), reverse=True)
+    red_top = [p["video_id"] for p in reds[:RED_TRACK_MAX]]
+
+    state_obj = {"sticky_red": sorted(list(sticky)), "red_top": red_top}
+    state_path.write_text(json.dumps(state_obj, ensure_ascii=False, indent=2), encoding="utf-8")
+    return state_obj
+
+
+def main():
+    if not YT_API_KEY:
+        raise SystemExit("YT_API_KEY is required.")
+
+    run_at = now_utc()
+    run_at_utc = run_at.isoformat()
+
+    ensure_dir(DATA_DIR / "channels")
+
+    watch = read_watchlist()
+    channels_index = []
+    warnings = []
+
+    for watch_key in watch:
         try:
-            channel_id, ch_info = resolve_channel_id(it)
-            uploads = ch_info["contentDetails"]["relatedPlaylists"]["uploads"]
-            ch_dir = os.path.join(CHANNELS_DIR, channel_id)
-            os.makedirs(ch_dir, exist_ok=True)
+            cid = resolve_channel_id(watch_key)
+            ch = fetch_channel(cid)
 
-            # チャンネル情報保存
-            save_json(os.path.join(ch_dir, "channel.json"), ch_info)
+            title = ch.get("snippet", {}).get("title", "")
+            uploads = ch.get("contentDetails", {}).get("relatedPlaylists", {}).get("uploads")
+            if not uploads:
+                raise RuntimeError("uploads playlist not found")
 
-            # 直近最大500本
-            plist_items = list_latest_from_uploads(uploads, LATEST_MAX)
-            save_json(os.path.join(ch_dir, "latest_500_playlistItems.json"), {"items": plist_items})
+            ch_dir = DATA_DIR / "channels" / cid
+            ensure_dir(ch_dir)
 
-            # video_id抽出
-            video_ids: List[str] = []
-            pub_map: Dict[str, str] = {}
-            title_map: Dict[str, str] = {}
-            for pi in plist_items:
-                vid = pi.get("contentDetails", {}).get("videoId")
-                sn = pi.get("snippet", {}) or {}
-                if not vid:
-                    continue
-                video_ids.append(vid)
-                pub_map[vid] = sn.get("publishedAt", "")
-                title_map[vid] = sn.get("title", "")
+            (ch_dir / "channel.json").write_text(json.dumps(ch, ensure_ascii=False, indent=2), encoding="utf-8")
 
-            # details取得
-            details = fetch_videos_details(video_ids)
+            pli = fetch_latest_playlist_items(uploads, MAX_VIDEOS)
+            (ch_dir / "latest_500_playlistItems.json").write_text(json.dumps(pli, ensure_ascii=False, indent=2), encoding="utf-8")
 
-            # 異常度用の学習データ（Shortは除外して基準線を作る）
-            xs_days: List[float] = []
-            ys_views: List[float] = []
+            video_ids = []
+            for it in pli.get("items", []):
+                vid = it.get("contentDetails", {}).get("videoId")
+                if vid:
+                    video_ids.append(vid)
 
-            now = datetime.now(timezone.utc)
+            videos = fetch_videos(video_ids)
 
-            per_video: List[Dict] = []
-            for vid in video_ids:
-                itv = details.get(vid)
-                if not itv:
-                    continue
+            points, baseline = compute_points_and_baseline(videos, run_at)
 
-                stats = itv.get("statistics", {}) or {}
-                snippet = itv.get("snippet", {}) or {}
-                cdet = itv.get("contentDetails", {}) or {}
+            (ch_dir / "latest_points.json").write_text(
+                json.dumps({"run_at_utc": run_at_utc, "points": points}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
 
-                view = int(stats.get("viewCount", 0) or 0)
-                like = int(stats.get("likeCount", 0) or 0)
+            latest = {"run_at_utc": run_at_utc, "baseline": baseline}
 
-                published_at = snippet.get("publishedAt") or pub_map.get(vid, "")
-                if not published_at:
-                    continue
-                dt = parse_iso8601_z(published_at)
-                days = max(1.0, (now - dt).total_seconds() / 86400.0)
+            # history
+            (ch_dir / "runs.jsonl").open("a", encoding="utf-8").write(json.dumps(latest, ensure_ascii=False) + "\n")
 
-                duration_sec = iso_duration_to_seconds(cdet.get("duration", ""))
-                is_short = duration_sec <= 60  # ざっくり判定（後で厳密化してもOK）
+            st = update_state_and_red(points, ch_dir / "state.json")
+            (ch_dir / "latest.json").write_text(json.dumps(latest, ensure_ascii=False, indent=2), encoding="utf-8")
 
-                # 基準線用（Short除外、viewが極端に小さすぎるものも除外）
-                if (not is_short) and view >= 100:
-                    xs_days.append(days)
-                    ys_views.append(view)
+            max_anom = max((p.get("anomaly_ratio", 0.0) for p in points), default=0.0)
 
-                per_video.append(
-                    {
-                        "video_id": vid,
-                        "title": title_map.get(vid, ""),
-                        "publishedAt": published_at,
-                        "days": days,
-                        "viewCount": view,
-                        "likeCount": like,
-                        "durationSec": duration_sec,
-                        "isShort": is_short,
-                    }
-                )
-
-            # 基準線（log-log回帰）
-            a, b = fit_loglog_regression(xs_days, ys_views)
-
-            # 残差から平常ブレ感を推定（MAD）
-            residuals: List[float] = []
-            for i in range(len(xs_days)):
-                pred = max(1.0, predict_from_loglog(a, b, xs_days[i]))
-                r = ys_views[i] / pred
-                residuals.append(math.log10(max(1e-6, r)))
-            med_res = robust_median(residuals)
-            mad_res = mad(residuals, med_res)
-            # “平常上限”の参考（log10空間で median + 3*MAD）
-            upper_log = med_res + 3.0 * mad_res
-            upper_ratio = 10 ** upper_log if mad_res > 0 else 3.0  # 退避
-
-            # like基準（like/viewの中央値を期待値として使う）
-            like_rates = []
-            for v in per_video:
-                if v["viewCount"] >= 100 and v["likeCount"] > 0:
-                    like_rates.append(v["likeCount"] / max(1.0, v["viewCount"]))
-            med_like_rate = robust_median(like_rates) if like_rates else 0.02
-
-            # state（sticky赤・赤top100）
-            state = load_state(ch_dir)
-
-            # 動画ごとの異常度計算
-            red_count_now = 0
-            points: List[Dict] = []
-            for v in per_video:
-                pred_view = max(1.0, predict_from_loglog(a, b, v["days"]))
-                ratio_nat = v["viewCount"] / pred_view
-
-                exp_like = max(1.0, v["viewCount"] * med_like_rate)
-                ratio_like = v["likeCount"] / exp_like if exp_like > 0 else 0.0
-
-                # 異常度は「自然流入乖離」と「いいね乖離」の強い方
-                anomaly_ratio = max(ratio_nat, ratio_like)
-
-                observed_label = label_from_ratio(anomaly_ratio)
-
-                # sticky赤はREDのみ固定（赤は消さない）
-                update_red_sets(state, v["video_id"], anomaly_ratio, run_at)
-                sticky_red = v["video_id"] in state.get("sticky_red", {})
-
-                display_label = "RED" if sticky_red else observed_label
-                if display_label == "RED":
-                    red_count_now += 1
-
-                points.append(
-                    {
-                        **v,
-                        "predView": pred_view,
-                        "ratio_nat": ratio_nat,
-                        "ratio_like": ratio_like,
-                        "anomaly_ratio": anomaly_ratio,
-                        "observed_label": observed_label,
-                        "display_label": display_label,
-                        "sticky_red": sticky_red,
-                    }
-                )
-
-            save_state(ch_dir, state)
-
-            sticky_red_count = len(state.get("sticky_red", {}))
-            red_top = state.get("red_top", [])
-
-            # 監視条件：sticky赤が3件以上
-            if sticky_red_count >= 3:
-                auto_watch_channels.append(channel_id)
-
-            # ラン用サマリ
-            # “ワースト”指標用に、今回の最大異常度も持つ
-            max_anom = max((p["anomaly_ratio"] for p in points), default=0.0)
-
-            run_obj = {
-                "run_at_utc": run_at,
-                "watch_key": it.raw,
-                "channel_id": channel_id,
-                "latest_count": len(plist_items),
-                "points_count": len(points),
-                "baseline": {"a": a, "b": b, "upper_ratio_ref": upper_ratio, "med_like_rate": med_like_rate},
-                "sticky_red_count": sticky_red_count,
-                "red_top_count": len(red_top),
-                "max_anomaly_ratio_this_run": max_anom,
-                "status": "analyzed",
-            }
-
-            append_jsonl(os.path.join(ch_dir, "runs.jsonl"), run_obj)
-            save_json(os.path.join(ch_dir, "latest.json"), run_obj)
-
-            # フロント用：最新点群（まずはJSON。後でgzip化）
-            save_json(os.path.join(ch_dir, "latest_points.json"), {"run_at_utc": run_at, "points": points})
-
-            index["channels"].append(
+            channels_index.append(
                 {
-                    "channel_id": channel_id,
-                    "watch_key": it.raw,
-                    "title": (ch_info.get("snippet", {}) or {}).get("title", ""),
-                    "sticky_red_count": sticky_red_count,
-                    "red_top_count": len(red_top),
-                    "max_anomaly_ratio": max_anom,
+                    "channel_id": cid,
+                    "watch_key": watch_key,
+                    "title": title,
+                    "sticky_red_count": len(st.get("sticky_red", [])),
+                    "red_top_count": len(st.get("red_top", [])),
+                    "max_anomaly_ratio": float(max_anom),
                 }
             )
 
-            print(f"[OK] {it.raw} -> {channel_id} : videos={len(points)} sticky_red={sticky_red_count} max={max_anom:.2f}")
-
         except Exception as e:
-            print(f"[NG] {it.raw}: {e}", file=sys.stderr)
+            warnings.append({"watch_key": watch_key, "error": str(e)})
 
-    # 全体index保存（ランキングの元）
-    index["generated_at_utc"] = utc_now_iso()
-    save_json(os.path.join(DATA_ROOT, "index.json"), index)
+    channels_index.sort(key=lambda x: x.get("max_anomaly_ratio", 0.0), reverse=True)
 
-    # 自動監視対象
-    write_watchlist_auto(auto_watch_channels)
+    index_obj = {"generated_at_utc": run_at_utc, "watch_count": len(watch), "warnings": warnings, "channels": channels_index}
+    (DATA_DIR / "index.json").write_text(json.dumps(index_obj, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    auto = [ch["channel_id"] for ch in channels_index if ch.get("sticky_red_count", 0) >= 3]
+    WATCHLIST_AUTO.write_text("\n".join(auto) + ("\n" if auto else ""), encoding="utf-8")
+
+    ensure_dir(SITE_DATA_DIR)
+    copy_tree(DATA_DIR, SITE_DATA_DIR)
+
+    print("weekly done.")
+    if warnings:
+        print("warnings:", warnings)
 
 
 if __name__ == "__main__":
