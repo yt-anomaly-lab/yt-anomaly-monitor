@@ -415,6 +415,7 @@ function drawPlot(bundle) {
       `anomaly_ratio: ${Number.isFinite(anomaly) ? anomaly.toFixed(2) : "?"}`,
       `<a href="${url}" target="_blank" rel="noreferrer">open</a>`,
     ].join("<br>"));
+    
     colors.push(LABEL_COLOR[label] || "#94a3b8"); // fallback gray
 
   }
