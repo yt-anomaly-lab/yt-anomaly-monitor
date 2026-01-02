@@ -21,6 +21,8 @@ jobs:
           python-version: '3.11'
 
       - name: Run weekly script
+        env:
+          YT_API_KEY: ${{ secrets.YT_API_KEY }}
         run: |
           python tools/run_weekly.py
 
@@ -31,3 +33,8 @@ jobs:
           git add data
           git commit -m "weekly: update data" || exit 0
           git push
+      - name: Sync data to site/data
+        run: |
+          rm -rf site/data
+          mkdir -p site/data
+          cp -r data/* site/data/

@@ -1,0 +1,44 @@
+{
+  "kind": "youtube#channel",
+  "etag": "_nPS3_9OwlEeJFuDCKuu-uQiEiM",
+  "id": "UCB9cirTse_-h02qZ6ctmBzw",
+  "snippet": {
+    "title": "trueman_project",
+    "description": "丸山も批判すなる虚妄といふものを、我も歌はむとてするなり。\n\n\nX : @trueman_project\nyoutube : https://www.youtube.com/@trueman_project\nTikTok : www.tiktok.com/@trueman_project\nInstagram : trueman_project",
+    "customUrl": "@trueman_project",
+    "publishedAt": "2024-11-16T13:25:03.020597Z",
+    "thumbnails": {
+      "default": {
+        "url": "https://yt3.ggpht.com/J14wRxz3L4w-HPLEyfay1GNCkUCyPItOqU8SBTtgudhaZlnej3xwozZ89J6yw0j2SZ5loA1S=s88-c-k-c0x00ffffff-no-rj",
+        "width": 88,
+        "height": 88
+      },
+      "medium": {
+        "url": "https://yt3.ggpht.com/J14wRxz3L4w-HPLEyfay1GNCkUCyPItOqU8SBTtgudhaZlnej3xwozZ89J6yw0j2SZ5loA1S=s240-c-k-c0x00ffffff-no-rj",
+        "width": 240,
+        "height": 240
+      },
+      "high": {
+        "url": "https://yt3.ggpht.com/J14wRxz3L4w-HPLEyfay1GNCkUCyPItOqU8SBTtgudhaZlnej3xwozZ89J6yw0j2SZ5loA1S=s800-c-k-c0x00ffffff-no-rj",
+        "width": 800,
+        "height": 800
+      }
+    },
+    "localized": {
+      "title": "trueman_project",
+      "description": "丸山も批判すなる虚妄といふものを、我も歌はむとてするなり。\n\n\nX : @trueman_project\nyoutube : https://www.youtube.com/@trueman_project\nTikTok : www.tiktok.com/@trueman_project\nInstagram : trueman_project"
+    }
+  },
+  "contentDetails": {
+    "relatedPlaylists": {
+      "likes": "",
+      "uploads": "UUB9cirTse_-h02qZ6ctmBzw"
+    }
+  },
+  "statistics": {
+    "viewCount": "1518061",
+    "subscriberCount": "43700",
+    "hiddenSubscriberCount": false,
+    "videoCount": "203"
+  }
+}
