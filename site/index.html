@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>yt-anomaly-monitor</title>
   <link rel="stylesheet" href="./style.css" />
+  <link rel="icon" href="data:,">
   <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
 </head>
 <body>
@@ -29,7 +30,12 @@
 
   <main class="layout">
     <section class="panel">
-      <div id="plot" class="plot"></div>
+      <div id="plotWrap" class="plot-wrap">
+        <div id="plot" class="plot"></div>
+        <!-- 赤点パルス専用オーバーレイ（Plotlyの上） -->
+        <canvas id="plotPulse" class="plot-pulse"></canvas>
+      </div>
+
       <div class="note">
         <div id="baselineInfo"></div>
       </div>
@@ -37,8 +43,7 @@
 
     <aside class="side">
       <div class="card">
-        <div class="card-title">RED上位（ドクドク）</div>
-        <canvas id="dokudoku" width="360" height="360"></canvas>
+        <div class="card-title">RED上位</div>
         <div id="redList" class="redlist"></div>
       </div>
 

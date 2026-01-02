@@ -87,7 +87,26 @@ body{
   box-shadow:var(--shadow);
   overflow:hidden;
 }
-.plot{height:calc(100vh - 120px); min-height:520px}
+
+.plot-wrap{
+  position: relative;
+  height: calc(100vh - 120px);
+  min-height: 520px;
+}
+
+.plot{
+  position: absolute;
+  inset: 0;
+}
+
+.plot-pulse{
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none; /* Plotly操作を邪魔しない */
+}
+
 .note{
   padding:10px 14px;
   border-top:1px solid var(--border);
@@ -115,23 +134,16 @@ body{
   letter-spacing:.3px;
   margin-bottom:10px;
 }
-#dokudoku{
-  width:100%;
-  height:auto;
-  border-radius:14px;
-  background:rgba(0,0,0,.2);
-  border:1px solid var(--border);
-}
 
 .redlist, .chlist{
   display:flex;
   flex-direction:column;
   gap:8px;
-  margin-top:10px;
-  max-height:240px;
+  max-height:320px;
   overflow:auto;
   padding-right:6px;
 }
+
 .item{
   padding:10px;
   border-radius:12px;
