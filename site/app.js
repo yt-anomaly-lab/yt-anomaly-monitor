@@ -1,6 +1,7 @@
 /* global Plotly */
 
 const DATA_BASE = "./data";
+
 const $ = (sel) => document.querySelector(sel);
 
 const state = {
@@ -14,18 +15,22 @@ function safeNum(v, dflt = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : dflt;
 }
+
 function fmtInt(n) {
   n = safeNum(n, 0);
   return n.toLocaleString("en-US");
 }
+
 function youtubeUrl(videoId) {
   return `https://www.youtube.com/watch?v=${encodeURIComponent(videoId || "")}`;
 }
+
 async function fetchJson(path) {
   const r = await fetch(path, { cache: "no-store" });
   if (!r.ok) throw new Error(`fetch failed: ${path} (${r.status})`);
   return await r.json();
 }
+
 function escapeHtml(s) {
   return String(s ?? "")
     .replaceAll("&", "&amp;")
@@ -35,28 +40,6 @@ function escapeHtml(s) {
     .replaceAll("'", "&#39;");
 }
 
-/* ---- 互換吸収レイヤ ---- */
-
-function getChannelId(ch) {
-  return ch?.channel_id || ch?.channelId || ch?.id || "";
-}
-function getChannelTitle(ch) {
-  return ch?.title || ch?.handle || ch?.watch_key || ch?.watchKey || getChannelId(ch) || "(unknown)";
-}
-function getStickyCount(ch) {
-  // index.json の揺れ吸収
-  return safeNum(
-    ch?.sticky_red_count,
-    safeNum(ch?.sticky_red, safeNum(ch?.sticky, 0))
-  );
-}
-function getWorstAnomaly(ch) {
-  return safeNum(
-    ch?.max_anomaly_ratio,
-    safeNum(ch?.worst_anomaly, safeNum(ch?.worst, NaN))
-  );
-}
-
 function pick(obj, keys) {
   for (const k of keys) {
     if (obj && obj[k] != null) return obj[k];
@@ -64,68 +47,123 @@ function pick(obj, keys) {
   return undefined;
 }
 
+/* ---------- index.json 互換 ---------- */
+
+function getChannelId(ch) {
+  return ch?.channel_id || ch?.channelId || ch?.id || "";
+}
+
+function getChannelTitle(ch) {
+  return ch?.title || ch?.handle || ch?.watch_key || ch?.watchKey || getChannelId(ch) || "(unknown)";
+}
+
+function getStickyCount(ch) {
+  return safeNum(ch?.sticky_red_count, safeNum(ch?.sticky_red, safeNum(ch?.sticky, 0)));
+}
+
+function getWorstAnomaly(ch) {
+  return safeNum(ch?.max_anomaly_ratio, safeNum(ch?.worst_anomaly, safeNum(ch?.worst, NaN)));
+}
+
+/* ---------- latest_points.json 互換 ---------- */
+/*
+  あなたの形式:
+  {
+    run_at_utc: "...",
+    points: [
+      {
+        video_id, title, publishedAt, days,
+        viewCount, likeCount,
+        ratio_nat, ratio_like, anomaly_ratio,
+        observed_label, display_label, sticky_red
+      }, ...
+    ]
+  }
+*/
+
+function normalizePoints(pointsJson) {
+  if (Array.isArray(pointsJson)) return pointsJson;
+  if (pointsJson && Array.isArray(pointsJson.points)) return pointsJson.points;
+  if (pointsJson && Array.isArray(pointsJson.items)) return pointsJson.items;
+  return [];
+}
+
 function getVideoId(p) {
   return (
     p?.videoId ||
     p?.video_id ||
-    p?.videoID ||
     p?.id ||
     p?.contentDetails?.videoId ||
-    p?.contentDetails?.video_id ||
     ""
   );
 }
+
 function getTitle(p) {
-  return (
-    p?.title ||
-    p?.snippet?.title ||
-    p?.video_title ||
-    p?.name ||
-    "(no title)"
-  );
+  return p?.title || p?.snippet?.title || "(no title)";
 }
+
+function getPublishedAt(p) {
+  return p?.publishedAt || p?.snippet?.publishedAt || null;
+}
+
+function getDays(p) {
+  // すでに days が入ってる（今回のデータはこれ）
+  const d = pick(p, ["days", "days_since_publish", "daysSincePublish"]);
+  const dn = safeNum(d, NaN);
+  if (dn > 0) return dn;
+
+  // 念のため publishedAt から計算（後方互換）
+  const pub = getPublishedAt(p);
+  if (!pub) return NaN;
+  const pubMs = Date.parse(pub);
+  if (!Number.isFinite(pubMs)) return NaN;
+  const nowMs = Date.now();
+  const diff = (nowMs - pubMs) / (1000 * 60 * 60 * 24);
+  return diff > 0 ? diff : NaN;
+}
+
 function getViews(p) {
-  // ありがちな揺れ：views, view_count, viewCount, statistics.viewCount
+  // 今回のデータは viewCount
   const v =
     pick(p, ["views", "view_count", "viewCount"]) ??
-    pick(p?.statistics, ["viewCount", "view_count"]);
+    pick(p?.statistics, ["viewCount"]);
   return safeNum(v, NaN);
 }
+
 function getLikes(p) {
   const v =
     pick(p, ["likes", "like_count", "likeCount"]) ??
-    pick(p?.statistics, ["likeCount", "like_count"]);
+    pick(p?.statistics, ["likeCount"]);
   return safeNum(v, NaN);
 }
-function getDays(p) {
-  const v = pick(p, ["days", "days_since_publish", "daysSincePublish"]);
-  return safeNum(v, NaN);
-}
+
 function getLabel(p) {
+  // 今回のデータは display_label が本命
   return String(
-    pick(p, ["label", "level", "anomaly_label", "anomalyLabel"]) ?? "NORMAL"
+    pick(p, ["display_label", "observed_label", "label", "level"]) ?? "NORMAL"
   ).toUpperCase();
 }
-function getAnomalyRatio(p) {
-  return safeNum(
-    pick(p, ["anomaly_ratio", "anomalyRatio", "anomaly"]) ?? NaN,
-    NaN
-  );
-}
+
 function getRatioNat(p) {
   return safeNum(pick(p, ["ratio_nat", "ratioNat"]) ?? NaN, NaN);
 }
+
 function getRatioLike(p) {
   return safeNum(pick(p, ["ratio_like", "ratioLike"]) ?? NaN, NaN);
 }
 
-/* ---- UI ---- */
+function getAnomalyRatio(p) {
+  return safeNum(pick(p, ["anomaly_ratio", "anomalyRatio", "anomaly"]) ?? NaN, NaN);
+}
+
+/* ---------- UI ---------- */
 
 function renderChannelList(index) {
   const root = $("#channelList");
+  if (!root) return;
   root.innerHTML = "";
-  const arr = Array.isArray(index?.channels) ? index.channels : [];
 
+  const arr = Array.isArray(index?.channels) ? index.channels : [];
   arr.slice(0, 60).forEach((ch) => {
     const div = document.createElement("div");
     div.className = "item";
@@ -138,27 +176,26 @@ function renderChannelList(index) {
       <div class="t">${escapeHtml(title)}</div>
       <div class="m">worst: ${Number.isFinite(worst) ? worst.toFixed(2) : "?"} / sticky_red: ${sticky}</div>
     `;
+
     div.addEventListener("click", () => {
       const id = getChannelId(ch);
       if (id) setChannel(id);
     });
+
     root.appendChild(div);
   });
 }
 
 function renderChannelSelect(index) {
   const sel = $("#channelSelect");
+  if (!sel) return;
   sel.innerHTML = "";
 
   const arr = Array.isArray(index?.channels) ? index.channels : [];
   arr.forEach((ch) => {
     const opt = document.createElement("option");
     opt.value = getChannelId(ch);
-
-    const title = getChannelTitle(ch);
-    const sticky = getStickyCount(ch);
-
-    opt.textContent = `${title} (sticky_red=${sticky})`;
+    opt.textContent = `${getChannelTitle(ch)} (sticky_red=${getStickyCount(ch)})`;
     sel.appendChild(opt);
   });
 
@@ -170,8 +207,8 @@ function renderChannelSelect(index) {
 
 function setMode(mode) {
   state.mode = mode;
-  $("#btnViewsDays").classList.toggle("active", mode === "views_days");
-  $("#btnViewsLikes").classList.toggle("active", mode === "views_likes");
+  $("#btnViewsDays")?.classList.toggle("active", mode === "views_days");
+  $("#btnViewsLikes")?.classList.toggle("active", mode === "views_likes");
 
   if (state.currentChannelId) {
     const cached = state.channelCache.get(state.currentChannelId);
@@ -183,12 +220,14 @@ async function loadChannelBundle(channelId) {
   if (state.channelCache.has(channelId)) return state.channelCache.get(channelId);
 
   const base = `${DATA_BASE}/channels/${channelId}`;
-  const [channel, latest, points, st] = await Promise.all([
+  const [channel, latest, pointsJson, st] = await Promise.all([
     fetchJson(`${base}/channel.json`).catch(() => ({})),
     fetchJson(`${base}/latest.json`).catch(() => ({})),
-    fetchJson(`${base}/latest_points.json`).catch(() => ([])),
+    fetchJson(`${base}/latest_points.json`).catch(() => ({})),
     fetchJson(`${base}/state.json`).catch(() => ({})),
   ]);
+
+  const points = normalizePoints(pointsJson);
 
   const bundle = { channel, latest, points, state: st };
   state.channelCache.set(channelId, bundle);
@@ -197,7 +236,8 @@ async function loadChannelBundle(channelId) {
 
 async function setChannel(channelId) {
   state.currentChannelId = channelId;
-  $("#channelSelect").value = channelId;
+  const sel = $("#channelSelect");
+  if (sel) sel.value = channelId;
 
   const bundle = await loadChannelBundle(channelId);
   renderBaselineInfo(bundle);
@@ -219,14 +259,19 @@ function renderBaselineInfo(bundle) {
     state.currentChannelId ||
     "(unknown)";
 
-  $("#baselineInfo").textContent =
+  const el = $("#baselineInfo");
+  if (!el) return;
+
+  el.textContent =
     `Channel: ${title}` +
-    ` / baseline: a=${Number.isFinite(a) ? a.toFixed(3) : "?"}, b=${Number.isFinite(bb) ? bb.toFixed(3) : "?"}` +
-    ` / upper_ratio_ref=${Number.isFinite(upper) ? upper.toFixed(2) : "?"}` +
-    ` / med_like_rate=${Number.isFinite(medLike) ? medLike.toExponential(2) : "?"}`;
+    ` / a=${Number.isFinite(a) ? a.toFixed(3) : "?"}` +
+    ` b=${Number.isFinite(bb) ? bb.toFixed(3) : "?"}` +
+    ` upper=${Number.isFinite(upper) ? upper.toFixed(2) : "?"}` +
+    ` med_like=${Number.isFinite(medLike) ? medLike.toExponential(2) : "?"}` +
+    ` / points=${Array.isArray(bundle?.points) ? bundle.points.length : 0}`;
 }
 
-/* ---- Plot ---- */
+/* ---------- Plot ---------- */
 
 function logspace(xmin, xmax, n) {
   const lo = Math.log10(xmin);
@@ -239,7 +284,12 @@ function logspace(xmin, xmax, n) {
   return arr;
 }
 
-function buildBaselineTraces(mode, rows, { a, b, upperRatio, medLikeRate }) {
+function buildBaselineTraces(mode, rows, baseline) {
+  const a = safeNum(baseline?.a, NaN);
+  const b = safeNum(baseline?.b, NaN);
+  const upperRatio = safeNum(baseline?.upper_ratio_ref, NaN);
+  const medLikeRate = safeNum(baseline?.med_like_rate, NaN);
+
   if (!rows.length) return [];
   const N = 80;
 
@@ -286,6 +336,7 @@ function buildBaselineTraces(mode, rows, { a, b, upperRatio, medLikeRate }) {
   const traces = [
     { type: "scatter", mode: "lines", name: "expected", x: xs, y: pred, hoverinfo: "skip", line: { width: 2, dash: "solid" } },
   ];
+
   if (upperRatio > 0) {
     traces.push({
       type: "scatter",
@@ -297,19 +348,24 @@ function buildBaselineTraces(mode, rows, { a, b, upperRatio, medLikeRate }) {
       line: { width: 2, dash: "dot" },
     });
   }
+
   return traces;
 }
 
 function drawPlot(bundle) {
   const points = Array.isArray(bundle?.points) ? bundle.points : [];
   const baseline = bundle?.latest?.baseline || {};
-  const a = safeNum(baseline.a, NaN);
-  const b = safeNum(baseline.b, NaN);
-  const upperRatio = safeNum(baseline.upper_ratio_ref, NaN);
-  const medLikeRate = safeNum(baseline.med_like_rate, NaN);
 
-  // log軸に乗るものだけ（views>0, days>0）
-  const rows = points.filter((p) => getViews(p) > 0 && getDays(p) > 0);
+  // log軸のための最低条件
+  const rows = points.filter((p) => {
+    const views = getViews(p);
+    const days = getDays(p);
+    if (!(views > 0)) return false;
+    if (state.mode === "views_days") return days > 0;
+    // views_likes のときは likes>0 も必要
+    const likes = getLikes(p);
+    return likes > 0;
+  });
 
   const x = [];
   const y = [];
@@ -329,7 +385,6 @@ function drawPlot(bundle) {
 
     let xv, yv;
     if (state.mode === "views_likes") {
-      if (!(views > 0 && likes > 0)) continue;
       xv = views;
       yv = likes;
     } else {
@@ -341,19 +396,17 @@ function drawPlot(bundle) {
     y.push(yv);
 
     const url = youtubeUrl(videoId);
-    const h = [
+    hover.push([
       `<b>${escapeHtml(title)}</b>`,
       `label: <b>${escapeHtml(label)}</b>`,
-      `days: ${Number.isFinite(days) ? days.toFixed(1) : "?"}`,
+      `days: ${Number.isFinite(days) ? days.toFixed(2) : "?"}`,
       `views: ${Number.isFinite(views) ? fmtInt(views) : "?"}`,
       `likes: ${Number.isFinite(likes) ? fmtInt(likes) : "?"}`,
       `ratio_nat: ${Number.isFinite(ratioNat) ? ratioNat.toFixed(2) : "?"}`,
       `ratio_like: ${Number.isFinite(ratioLike) ? ratioLike.toFixed(2) : "?"}`,
       `anomaly_ratio: ${Number.isFinite(anomaly) ? anomaly.toFixed(2) : "?"}`,
       `<a href="${url}" target="_blank" rel="noreferrer">open</a>`,
-    ].join("<br>");
-
-    hover.push(h);
+    ].join("<br>"));
   }
 
   const scatter = {
@@ -367,7 +420,7 @@ function drawPlot(bundle) {
     marker: { size: 6, opacity: 0.85 },
   };
 
-  const lines = buildBaselineTraces(state.mode, rows, { a, b, upperRatio, medLikeRate });
+  const lines = buildBaselineTraces(state.mode, rows, baseline);
 
   const layout = {
     margin: { l: 60, r: 20, t: 40, b: 60 },
@@ -375,8 +428,6 @@ function drawPlot(bundle) {
     plot_bgcolor: "rgba(0,0,0,0)",
     showlegend: true,
     legend: { orientation: "h", x: 0, y: 1.1 },
-    xaxis: {},
-    yaxis: {},
   };
 
   if (state.mode === "views_likes") {
@@ -392,28 +443,25 @@ function drawPlot(bundle) {
   Plotly.newPlot("plot", [scatter, ...lines], layout, { displayModeBar: true, responsive: true });
 }
 
-/* ---- RED list & dokudoku ---- */
+/* ---------- RED list / dokudoku ---------- */
 
 function normalizeRedTop(st) {
-  // st.red_top が [ "id", ... ] でも [ {video_id:...}, ... ] でも吸収
+  // string/obj どちらも受ける
   const raw = Array.isArray(st?.red_top) ? st.red_top : Array.isArray(st?.redTop) ? st.redTop : [];
-  const out = [];
-  for (const it of raw) {
-    if (typeof it === "string") out.push({ videoId: it });
-    else if (it && typeof it === "object") out.push(it);
-  }
-  return out;
+  return raw
+    .map((it) => (typeof it === "string" ? { video_id: it } : it))
+    .filter(Boolean);
 }
 
 function renderRedList(bundle) {
   const root = $("#redList");
+  if (!root) return;
   root.innerHTML = "";
 
   const st = bundle?.state || {};
   const redTop = normalizeRedTop(st);
   const points = Array.isArray(bundle?.points) ? bundle.points : [];
 
-  // points から videoId を引けるようにする
   const lookup = new Map();
   for (const p of points) {
     const id = getVideoId(p);
@@ -421,7 +469,7 @@ function renderRedList(bundle) {
   }
 
   const list = redTop.slice(0, 10).map((x) => {
-    const id = getVideoId(x) || x.videoId || x.video_id || x.id || "";
+    const id = getVideoId(x) || x.video_id || x.videoId || x.id || "";
     return lookup.get(id) || x;
   });
 
@@ -431,7 +479,7 @@ function renderRedList(bundle) {
   }
 
   for (const p of list) {
-    const id = getVideoId(p);
+    const id = getVideoId(p) || p.video_id || "";
     const title = getTitle(p);
     const anomaly = getAnomalyRatio(p);
     const views = getViews(p);
@@ -460,7 +508,7 @@ function startDokudoku(bundle) {
   const lookup = new Map(points.map((p) => [getVideoId(p), p]));
 
   const list = redTop.slice(0, 10).map((x) => {
-    const id = getVideoId(x) || x.videoId || x.video_id || x.id || "";
+    const id = getVideoId(x) || x.video_id || x.videoId || x.id || "";
     return lookup.get(id) || x;
   }).filter(Boolean);
 
@@ -469,7 +517,6 @@ function startDokudoku(bundle) {
   let t = 0;
   dokudokuTimer = setInterval(() => {
     t += 1;
-
     const w = canvas.width, h = canvas.height;
     ctx.clearRect(0, 0, w, h);
 
@@ -478,8 +525,8 @@ function startDokudoku(bundle) {
 
     const beat = 0.5 + 0.5 * Math.sin(t * 0.22) * Math.sin(t * 0.07);
     const rBase = 40 + beat * 25;
-
     const cx = w / 2, cy = h / 2;
+
     for (let i = 0; i < 6; i++) {
       const ph = t * 0.15 + i;
       const rr = rBase + i * 14 + 6 * Math.sin(ph);
@@ -504,11 +551,11 @@ function startDokudoku(bundle) {
   }, 50);
 }
 
-/* ---- boot ---- */
+/* ---------- boot ---------- */
 
 async function boot() {
-  $("#btnViewsDays").addEventListener("click", () => setMode("views_days"));
-  $("#btnViewsLikes").addEventListener("click", () => setMode("views_likes"));
+  $("#btnViewsDays")?.addEventListener("click", () => setMode("views_days"));
+  $("#btnViewsLikes")?.addEventListener("click", () => setMode("views_likes"));
 
   const index = await fetchJson(`${DATA_BASE}/index.json`);
   state.index = index;
