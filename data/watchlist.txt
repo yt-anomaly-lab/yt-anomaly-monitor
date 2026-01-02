@@ -1,0 +1,9 @@
+# 監視対象チャンネル（1行1件）
+# 形式:
+#   - channel_id: UCxxxxxxxxxxxxxxxxxxxxxx
+#   - または @handle
+#
+# 例）
+# UC_xxxxxxxxxxxxxxxxxxxxxx
+# @somechannel
+
