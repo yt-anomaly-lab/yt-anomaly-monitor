@@ -20,21 +20,9 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Generate heartbeat file
+      - name: Run weekly script
         run: |
-          python - << 'PY'
-          import json, os
-          from datetime import datetime, timezone
-          os.makedirs("data", exist_ok=True)
-          payload = {
-              "ok": True,
-              "message": "weekly workflow ran successfully",
-              "run_at_utc": datetime.now(timezone.utc).isoformat(),
-          }
-          with open("data/heartbeat.json", "w", encoding="utf-8") as f:
-              json.dump(payload, f, ensure_ascii=False, indent=2)
-          print("Wrote data/heartbeat.json")
-          PY
+          python tools/run_weekly.py
 
       - name: Commit and push if changed
         run: |
