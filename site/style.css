@@ -1,7 +1,5 @@
 :root{
   --bg:#0b0d12;
-  --panel:#111625;
-  --panel2:#0f1422;
   --text:#e7ebff;
   --muted:#a8b0d8;
   --border:rgba(255,255,255,.08);
@@ -52,6 +50,33 @@ body{
   color:var(--text);
   outline:none;
 }
+.ctrl input{
+  min-width:260px;
+  padding:10px 10px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  background:rgba(255,255,255,.04);
+  color:var(--text);
+  outline:none;
+}
+
+.manual-row{
+  display:flex;
+  gap:8px;
+  align-items:center;
+}
+.btn2{
+  padding:10px 12px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  background:rgba(255,255,255,.06);
+  color:var(--text);
+  cursor:pointer;
+  font-size:12px;
+}
+.hint{font-size:11px; color:var(--muted)}
+
+.hidden{display:none !important;}
 
 .toggle{
   display:flex;
@@ -98,17 +123,13 @@ body{
   min-height: 520px;
 }
 
-.plot{
-  position: absolute;
-  inset: 0;
-}
-
+.plot{ position:absolute; inset:0; }
 .plot-pulse{
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  pointer-events:none;
 }
 
 .note{
@@ -163,4 +184,39 @@ body{
   font-size:12px;
   color:var(--muted);
   line-height:1.6;
+}
+
+/* -----------------------
+   Mobile: 1カラム + 指定順
+   上から: チャンネル関連(ヘッダ) → グラフオプション(ヘッダ) → グラフ → RED表 → About
+   Channelsカードは最後に追いやる（邪魔防止）
+------------------------ */
+@media (max-width: 900px){
+  .topbar{
+    flex-direction:column;
+    align-items:flex-start;
+    gap:12px;
+  }
+  .controls{
+    width:100%;
+    flex-direction:column;
+    align-items:flex-start;
+  }
+
+  .layout{
+    grid-template-columns: 1fr;
+  }
+
+  /* side内の順序調整 */
+  .card-red{ order: 2; }
+  .card-about{ order: 3; }
+  .card-ch{ order: 4; } /* Channelsカードは最後 */
+  .panel{ order: 1; }
+
+  .plot-wrap{
+    height: 70vh;
+    min-height: 420px;
+  }
+
+  .redlist, .chlist{ max-height: 240px; }
 }

@@ -16,11 +16,27 @@
     </div>
 
     <div class="controls">
-      <label class="ctrl">
+      <!-- 入力方式トグル -->
+      <div class="toggle" role="group" aria-label="channel input mode">
+        <button id="btnInputSelect" class="btn active" type="button">選択</button>
+        <button id="btnInputManual" class="btn" type="button">手入力</button>
+      </div>
+
+      <label id="selectBox" class="ctrl">
         <span>Channel</span>
         <select id="channelSelect"></select>
       </label>
 
+      <label id="manualBox" class="ctrl hidden">
+        <span>Channel (@handle / UC...)</span>
+        <div class="manual-row">
+          <input id="channelInput" type="text" placeholder="@trueman_project / UCB9..." />
+          <button id="btnLoadInput" class="btn2" type="button">Load</button>
+        </div>
+        <div id="manualHint" class="hint"></div>
+      </label>
+
+      <!-- グラフ種別 -->
       <div class="toggle" role="group" aria-label="plot mode">
         <button id="btnViewsDays" class="btn active" type="button">Views × Days</button>
         <button id="btnViewsLikes" class="btn" type="button">Views × Likes</button>
@@ -47,17 +63,17 @@
     </section>
 
     <aside class="side">
-      <div class="card">
+      <div class="card card-red">
         <div class="card-title">RED上位</div>
         <div id="redList" class="redlist"></div>
       </div>
 
-      <div class="card">
+      <div class="card card-ch">
         <div class="card-title">Channels（異常度ワースト順）</div>
         <div id="channelList" class="chlist"></div>
       </div>
 
-      <div class="card">
+      <div class="card card-about">
         <div class="card-title">About</div>
         <div class="about">
           <p>本ページは「再生挙動の統計的乖離」を可視化します。特定の不正を断定するものではありません。</p>

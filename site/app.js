@@ -2,7 +2,13 @@
 
 const DATA_BASE = "./data";
 
-/* 点の色（ラベル別） */
+/* =========================
+ * ★ パラメータ類（要望(5)）
+ * ========================= */
+const PULSE_SPEED = 1.0;     // 1.0=標準。0.5で半分の速さ、2.0で倍速
+const UPPER_MULT  = 1.0;     // 上限倍率の追加係数（baseline.upper_ratio_ref * UPPER_MULT）
+
+/* 点の色 */
 const LABEL_COLOR = {
   NORMAL: "#3b82f6",
   YELLOW: "#facc15",
@@ -15,13 +21,15 @@ const $ = (sel) => document.querySelector(sel);
 const state = {
   index: null,
   currentChannelId: null,
-  mode: "views_days",   // "views_days" | "views_likes"
-  yLog: true,           // ★自然流入図(views_days)の縦軸 log on/off
+  mode: "views_days", // "views_days" | "views_likes"
+  yLog: true,         // views_days の縦軸 log on/off
+  inputMode: "select",// "select" | "manual"
   channelCache: new Map(),
 
-  redPlotPoints: [],    // {x, y, strength, title, videoId}
+  redPlotPoints: [],  // {x, y, strength}
   pulseRunning: false,
   pulseT: 0,
+  plotEventsAttached: false,
 };
 
 function safeNum(v, dflt = 0) {
@@ -75,43 +83,74 @@ function normalizePoints(pointsJson) {
   return [];
 }
 
-function getVideoId(p) {
-  return p?.videoId || p?.video_id || p?.id || p?.contentDetails?.videoId || "";
-}
-function getTitle(p) {
-  return p?.title || p?.snippet?.title || "(no title)";
-}
+function getVideoId(p) { return p?.videoId || p?.video_id || p?.id || ""; }
+function getTitle(p)   { return p?.title || "(no title)"; }
+
 function getDays(p) {
-  const d = pick(p, ["days", "days_since_publish", "daysSincePublish"]);
+  const d = pick(p, ["days", "t_days"]);
   const dn = safeNum(d, NaN);
   if (dn >= 0) return dn;
-
-  const pub = p?.publishedAt || p?.snippet?.publishedAt;
+  const pub = p?.publishedAt;
   if (!pub) return NaN;
   const pubMs = Date.parse(pub);
   if (!Number.isFinite(pubMs)) return NaN;
   const diff = (Date.now() - pubMs) / (1000 * 60 * 60 * 24);
   return diff >= 0 ? diff : NaN;
 }
+
 function getViews(p) {
-  const v =
-    pick(p, ["views", "view_count", "viewCount"]) ??
-    pick(p?.statistics, ["viewCount"]);
+  const v = pick(p, ["viewCount", "views", "view_count", "viewCount"]);
   return safeNum(v, NaN);
 }
 function getLikes(p) {
-  const v =
-    pick(p, ["likes", "like_count", "likeCount"]) ??
-    pick(p?.statistics, ["likeCount"]);
+  const v = pick(p, ["likeCount", "likes", "like_count", "likeCount"]);
   return safeNum(v, NaN);
 }
 function getLabel(p) {
-  return String(
-    pick(p, ["display_label", "observed_label", "label", "level"]) ?? "NORMAL"
-  ).toUpperCase();
+  return String(pick(p, ["display_label", "observed_label", "label"]) ?? "NORMAL").toUpperCase();
 }
 function getAnomalyRatio(p) {
-  return safeNum(pick(p, ["anomaly_ratio", "anomalyRatio", "anomaly"]) ?? NaN, NaN);
+  return safeNum(pick(p, ["anomaly_ratio", "anomalyRatio"]) ?? NaN, NaN);
+}
+function getRatioNat(p) {
+  return safeNum(pick(p, ["ratio_nat"]) ?? NaN, NaN);
+}
+function getRatioLike(p) {
+  return safeNum(pick(p, ["ratio_like"]) ?? NaN, NaN);
+}
+
+/* ---------- 入力モード切替（要望(3)） ---------- */
+function setInputMode(mode) {
+  state.inputMode = mode;
+  $("#btnInputSelect")?.classList.toggle("active", mode === "select");
+  $("#btnInputManual")?.classList.toggle("active", mode === "manual");
+
+  $("#selectBox")?.classList.toggle("hidden", mode !== "select");
+  $("#manualBox")?.classList.toggle("hidden", mode !== "manual");
+}
+
+function findChannelIdByManualInput(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return null;
+
+  // UC... はそのまま
+  if (s.startsWith("UC")) return s;
+
+  // @handle の場合: index.json の watch_key / handle / title で探す（静的なので監視済みのみ）
+  const key = s.toLowerCase();
+  const arr = Array.isArray(state.index?.channels) ? state.index.channels : [];
+  const hit = arr.find(ch => {
+    const a = String(ch?.watch_key || ch?.watchKey || "").toLowerCase();
+    const b = String(ch?.handle || "").toLowerCase();
+    const c = String(ch?.title || "").toLowerCase();
+    return a === key || b === key || c.includes(key);
+  });
+  return hit ? getChannelId(hit) : null;
+}
+
+function showManualHint(msg) {
+  const el = $("#manualHint");
+  if (el) el.textContent = msg || "";
 }
 
 /* ---------- UI ---------- */
@@ -175,10 +214,8 @@ function updateYScaleButtons() {
 
 function setMode(mode) {
   state.mode = mode;
-
   $("#btnViewsDays")?.classList.toggle("active", mode === "views_days");
   $("#btnViewsLikes")?.classList.toggle("active", mode === "views_likes");
-
   updateYScaleButtons();
 
   if (state.currentChannelId) {
@@ -222,34 +259,14 @@ async function setChannel(channelId) {
 
   const bundle = await loadChannelBundle(channelId);
   renderBaselineInfo(bundle);
-  drawPlot(bundle);
+  await drawPlot(bundle);
   renderRedList(bundle);
 }
 
-function renderBaselineInfo(bundle) {
-  const b = bundle?.latest?.baseline || {};
-  const a = safeNum(b.a, NaN);
-  const bb = safeNum(b.b, NaN);
-  const upper = safeNum(b.upper_ratio_ref, NaN);
-  const medLike = safeNum(b.med_like_rate, NaN);
+/* =========================
+ * 期待線描画（要望(1)(2)）
+ * ========================= */
 
-  const title =
-    bundle?.channel?.title ||
-    bundle?.channel?.handle ||
-    state.currentChannelId ||
-    "(unknown)";
-
-  $("#baselineInfo").textContent =
-    `Channel: ${title}` +
-    ` / a=${Number.isFinite(a) ? a.toFixed(3) : "?"}` +
-    ` b=${Number.isFinite(bb) ? bb.toFixed(3) : "?"}` +
-    ` upper_ratio_ref=${Number.isFinite(upper) ? upper.toFixed(2) : "?"}` +
-    ` med_like_rate=${Number.isFinite(medLike) ? medLike.toExponential(2) : "?"}` +
-    ` / points=${Array.isArray(bundle?.points) ? bundle.points.length : 0}` +
-    ` / y=${state.mode === "views_days" ? (state.yLog ? "log" : "linear") : "log"}`;
-}
-
-/* ---------- baseline 線 ---------- */
 function linspace(xmin, xmax, n) {
   if (n <= 1) return [xmin];
   const arr = [];
@@ -257,7 +274,6 @@ function linspace(xmin, xmax, n) {
   for (let i = 0; i < n; i++) arr.push(xmin + step * i);
   return arr;
 }
-
 function logspace(xmin, xmax, n) {
   const lo = Math.log10(xmin);
   const hi = Math.log10(xmax);
@@ -270,74 +286,75 @@ function logspace(xmin, xmax, n) {
 }
 
 function buildBaselineTraces(mode, rows, baseline) {
-  const a = safeNum(baseline?.a, NaN);
-  const b = safeNum(baseline?.b, NaN);
-  const upperRatio = safeNum(baseline?.upper_ratio_ref, NaN);
-  const medLikeRate = safeNum(baseline?.med_like_rate, NaN);
-
   if (!rows.length) return [];
-  const N = 120;
 
-  if (mode === "views_likes") {
-    const viewsArr = rows.map((p) => getViews(p)).filter((v) => v > 0);
-    if (!viewsArr.length || !(medLikeRate > 0)) return [];
+  const N = 180;
 
-    const xmin = Math.min(...viewsArr);
-    const xmax = Math.max(...viewsArr);
-    const xs = logspace(xmin, xmax, N);
-    const ys = xs.map((v) => v * medLikeRate);
+  // 上限倍率（フロント側で追加係数を掛ける）
+  const upperRatio = safeNum(baseline?.upper_ratio_ref, NaN) * UPPER_MULT;
 
+  if (mode === "views_days") {
+    // ★ log-リニア: log10(Views) = a + b*days  （make_plots.py準拠） :contentReference[oaicite:4]{index=4}
+    const a = safeNum(baseline?.nat_a, NaN);
+    const b = safeNum(baseline?.nat_b, NaN);
+    if (!(Number.isFinite(a) && Number.isFinite(b))) return [];
+
+    const daysArr = rows.map(getDays).filter(v => v >= 0);
+    if (!daysArr.length) return [];
+
+    const xmin = Math.max(0, Math.min(...daysArr));
+    const xmax = Math.max(...daysArr);
+    const xs = linspace(xmin, xmax, N);
+
+    const center = xs.map(d => Math.pow(10, a + b * d));
     const traces = [
-      { type: "scatter", mode: "lines", name: "expected", x: xs, y: ys, hoverinfo: "skip", line: { width: 2, dash: "solid" } },
+      { type:"scatter", mode:"lines", name:"expected", x:xs, y:center, hoverinfo:"skip", line:{ width:2, dash:"solid" } }
     ];
     if (upperRatio > 0) {
       traces.push({
-        type: "scatter",
-        mode: "lines",
-        name: "upper",
-        x: xs,
-        y: ys.map((v) => v * upperRatio),
-        hoverinfo: "skip",
-        line: { width: 2, dash: "dot" },
+        type:"scatter", mode:"lines", name:"upper",
+        x: xs, y: center.map(v => v * upperRatio),
+        hoverinfo:"skip", line:{ width:2, dash:"dot" }
       });
     }
     return traces;
   }
 
-  // views_days：横軸はリニア固定なので linspace
-  const daysArr = rows.map((p) => getDays(p)).filter((v) => v >= 0);
-  if (!daysArr.length || !(Number.isFinite(a) && Number.isFinite(b))) return [];
+  // views_likes
+  // ★ logL→logV回帰: log10(Views) = b0 + b1*log10(Likes) （make_plots.py準拠） :contentReference[oaicite:5]{index=5}
+  const b0 = safeNum(baseline?.like_b0, NaN);
+  const b1 = safeNum(baseline?.like_b1, NaN);
+  if (!(Number.isFinite(b0) && Number.isFinite(b1))) return [];
 
-  const xmin = Math.min(...daysArr);
-  const xmax = Math.max(...daysArr);
+  const likesArr = rows.map(getLikes).filter(v => v > 0);
+  if (!likesArr.length) return [];
 
-  const xs = linspace(Math.max(0, xmin), Math.max(0, xmax), N);
+  const ymin = Math.min(...likesArr);
+  const ymax = Math.max(...likesArr);
 
-  const pred = xs.map((d) => {
-    // log-log 回帰式から期待値を出す（d=0 回避）
-    const dd = Math.max(1e-6, d);
-    const lv = a + b * Math.log10(dd);
-    return Math.pow(10, lv);
-  });
+  const ys = logspace(ymin, ymax, N);            // y=likes
+  const xs = ys.map(l => Math.pow(10, b0 + b1 * Math.log10(l))); // x=expected views given likes
 
   const traces = [
-    { type: "scatter", mode: "lines", name: "expected", x: xs, y: pred, hoverinfo: "skip", line: { width: 2, dash: "solid" } },
+    { type:"scatter", mode:"lines", name:"expected", x:xs, y:ys, hoverinfo:"skip", line:{ width:2, dash:"solid" } }
   ];
+
   if (upperRatio > 0) {
+    // 上限は「期待Views * upperRatio」（右側へ）
+    const xsUpper = xs.map(v => v * upperRatio);
     traces.push({
-      type: "scatter",
-      mode: "lines",
-      name: "upper",
-      x: xs,
-      y: pred.map((v) => v * upperRatio),
-      hoverinfo: "skip",
-      line: { width: 2, dash: "dot" },
+      type:"scatter", mode:"lines", name:"upper",
+      x: xsUpper, y: ys,
+      hoverinfo:"skip", line:{ width:2, dash:"dot" }
     });
   }
   return traces;
 }
 
-/* ---------- Plot + 赤点パルス ---------- */
+/* =========================
+ * ドクドク（赤点に重ねる）
+ * ========================= */
+
 function computeRedPlotPoints(rows, mode) {
   const red = [];
   for (const p of rows) {
@@ -347,27 +364,24 @@ function computeRedPlotPoints(rows, mode) {
 
     const views = getViews(p);
     const likes = getLikes(p);
-    const days = getDays(p);
+    const days  = getDays(p);
 
     let x, y;
-    if (mode === "views_likes") {
-      x = views; y = likes;
-    } else {
-      x = days; y = views;
-    }
+    if (mode === "views_days") { x = days;  y = views; }
+    else { x = views; y = likes; }
+
     if (!(x >= 0 && y > 0)) continue;
 
     const ar = getAnomalyRatio(p);
     const strength = Math.max(0.15, Math.min(1.0, Math.log10(ar + 1) / 2.0));
-
-    red.push({ x, y, strength, title: getTitle(p), videoId: getVideoId(p), anomaly: ar });
+    red.push({ x, y, strength });
   }
   return red;
 }
 
 function syncPulseCanvasToPlot() {
   const gd = $("#plot");
-  const c = $("#plotPulse");
+  const c  = $("#plotPulse");
   if (!gd || !c || !gd._fullLayout) return;
 
   const fl = gd._fullLayout;
@@ -375,15 +389,15 @@ function syncPulseCanvasToPlot() {
   if (!sz) return;
 
   c.style.left = `${sz.l}px`;
-  c.style.top = `${sz.t}px`;
+  c.style.top  = `${sz.t}px`;
   c.style.right = "auto";
   c.style.bottom = "auto";
-  c.style.width = `${sz.w}px`;
+  c.style.width  = `${sz.w}px`;
   c.style.height = `${sz.h}px`;
   c.style.position = "absolute";
 
   const dpr = window.devicePixelRatio || 1;
-  c.width = Math.max(1, Math.floor(sz.w * dpr));
+  c.width  = Math.max(1, Math.floor(sz.w * dpr));
   c.height = Math.max(1, Math.floor(sz.h * dpr));
 }
 
@@ -406,7 +420,7 @@ function dataToPixel(gd, x, y) {
 
 function drawPulses() {
   const gd = $("#plot");
-  const c = $("#plotPulse");
+  const c  = $("#plotPulse");
   if (!gd || !c) return;
   const ctx = c.getContext("2d");
   if (!ctx) return;
@@ -418,11 +432,11 @@ function drawPulses() {
   ctx.clearRect(0, 0, w, h);
 
   const t = state.pulseT;
-  const points = state.redPlotPoints;
-  if (!points || points.length === 0) return;
+  const pts = state.redPlotPoints;
+  if (!pts || pts.length === 0) return;
 
-  for (let i = 0; i < points.length; i++) {
-    const p = points[i];
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
     const xy = dataToPixel(gd, p.x, p.y);
     if (!xy) continue;
 
@@ -431,11 +445,12 @@ function drawPulses() {
     if (!(x >= -50 && x <= w + 50 && y >= -50 && y <= h + 50)) continue;
 
     const phase = (i * 17) % 97;
-    const beat = 0.5 + 0.5 * Math.sin((t * 0.22) + phase) * Math.sin((t * 0.07) + phase * 0.3);
+    // ★速度パラメータ（要望(5)）
+    const beat = 0.5 + 0.5 * Math.sin((t * 0.22 * PULSE_SPEED) + phase) * Math.sin((t * 0.07 * PULSE_SPEED) + phase * 0.3);
 
     const alpha = (0.10 + 0.28 * p.strength) * beat;
     const baseR = (8 + 14 * p.strength) * dpr;
-    const gap = (7 + 10 * p.strength) * dpr;
+    const gap   = (7 + 10 * p.strength) * dpr;
 
     ctx.save();
     ctx.globalAlpha = alpha;
@@ -464,78 +479,97 @@ function ensurePulseLoop() {
   state.pulseT = 0;
   requestAnimationFrame(pulseLoop);
 }
-function stopPulseLoop() {
-  state.pulseRunning = false;
-}
 
-/* Plotlyイベントの多重登録防止 */
-let plotEventsAttached = false;
 function attachPlotEventsOnce() {
-  if (plotEventsAttached) return;
-  plotEventsAttached = true;
+  if (state.plotEventsAttached) return;
+  state.plotEventsAttached = true;
 
   const gd = $("#plot");
   if (!gd) return;
 
   gd.on("plotly_afterplot", () => syncPulseCanvasToPlot());
   gd.on("plotly_relayout", () => syncPulseCanvasToPlot());
-
   window.addEventListener("resize", () => syncPulseCanvasToPlot());
+}
+
+/* ---------- 描画本体 ---------- */
+
+function renderBaselineInfo(bundle) {
+  const b = bundle?.latest?.baseline || {};
+  const title = bundle?.channel?.title || state.currentChannelId || "(unknown)";
+
+  const natA = safeNum(b.nat_a, NaN);
+  const natB = safeNum(b.nat_b, NaN);
+  const likeB0 = safeNum(b.like_b0, NaN);
+  const likeB1 = safeNum(b.like_b1, NaN);
+  const upper = safeNum(b.upper_ratio_ref, NaN);
+
+  $("#baselineInfo").textContent =
+    `Channel: ${title}` +
+    ` / upper=${Number.isFinite(upper) ? upper.toFixed(2) : "?"} * ${UPPER_MULT.toFixed(2)}` +
+    ` / nat(a,b)=(${Number.isFinite(natA)?natA.toFixed(3):"?"}, ${Number.isFinite(natB)?natB.toExponential(2):"?"})` +
+    ` / like(b0,b1)=(${Number.isFinite(likeB0)?likeB0.toFixed(3):"?"}, ${Number.isFinite(likeB1)?likeB1.toFixed(3):"?"})` +
+    ` / y=${state.mode==="views_days" ? (state.yLog?"log":"linear") : "log"}` +
+    ` / pulse_speed=${PULSE_SPEED.toFixed(2)}`;
 }
 
 async function drawPlot(bundle) {
   const points = Array.isArray(bundle?.points) ? bundle.points : [];
   const baseline = bundle?.latest?.baseline || {};
 
-  const rows = points.filter((p) => {
-    const views = getViews(p);
-    const days = getDays(p);
-    const likes = getLikes(p);
+  // 表示対象（log軸の時は >0 必須）
+  const rows = points.filter(p => {
+    const v = getViews(p);
+    const l = getLikes(p);
+    const d = getDays(p);
 
-    if (!(views > 0)) return false;
+    if (!(v > 0)) return false;
 
     if (state.mode === "views_days") {
-      return days >= 0;
+      return d >= 0;
     }
-    return likes > 0;
+    return l > 0;
   });
 
-  const x = [];
-  const y = [];
+  const xs = [];
+  const ys = [];
   const hover = [];
   const colors = [];
   const sizes = [];
 
   for (const p of rows) {
-    const videoId = getVideoId(p);
+    const id = getVideoId(p);
     const title = getTitle(p);
-    const days = getDays(p);
-    const views = getViews(p);
-    const likes = getLikes(p);
-    const anomaly = getAnomalyRatio(p);
+
+    const d = getDays(p);
+    const v = getViews(p);
+    const l = getLikes(p);
+
     const label = getLabel(p);
+    const ar = getAnomalyRatio(p);
+    const rn = getRatioNat(p);
+    const rl = getRatioLike(p);
 
-    let xv, yv;
-    if (state.mode === "views_likes") {
-      xv = views; yv = likes;
-    } else {
-      xv = days; yv = views;
-    }
+    let x, y;
+    if (state.mode === "views_days") { x = d; y = v; }
+    else { x = v; y = l; }
 
-    x.push(xv);
-    y.push(yv);
+    xs.push(x);
+    ys.push(y);
 
     colors.push(LABEL_COLOR[label] || "#94a3b8");
     sizes.push(label === "RED" ? 9 : (label === "ORANGE" ? 7 : 6));
 
-    const url = youtubeUrl(videoId);
+    const url = youtubeUrl(id);
     hover.push([
       `<b>${escapeHtml(title)}</b>`,
       `label: <b>${escapeHtml(label)}</b>`,
-      `days: ${Number.isFinite(days) ? days.toFixed(2) : "?"}`,
-      `views: ${Number.isFinite(views) ? fmtInt(views) : "?"}`,
-      `likes: ${Number.isFinite(likes) ? fmtInt(likes) : "?"}`,
-      `anomaly_ratio: ${Number.isFinite(anomaly) ? anomaly.toFixed(2) : "?"}`,
+      `days: ${Number.isFinite(d) ? d.toFixed(2) : "?"}`,
+      `views: ${Number.isFinite(v) ? fmtInt(v) : "?"}`,
+      `likes: ${Number.isFinite(l) ? fmtInt(l) : "?"}`,
+      `ratio_nat: ${Number.isFinite(rn) ? rn.toFixed(2) : "?"}`,
+      `ratio_like: ${Number.isFinite(rl) ? rl.toFixed(2) : "?"}`,
+      `anomaly_ratio: ${Number.isFinite(ar) ? ar.toFixed(2) : "?"}`,
       `<a href="${url}" target="_blank" rel="noreferrer">open</a>`,
     ].join("<br>"));
   }
@@ -544,8 +578,8 @@ async function drawPlot(bundle) {
     type: "scattergl",
     mode: "markers",
     name: "videos",
-    x,
-    y,
+    x: xs,
+    y: ys,
     text: hover,
     hoverinfo: "text",
     marker: { size: sizes, opacity: 0.9, color: colors },
@@ -563,24 +597,18 @@ async function drawPlot(bundle) {
     yaxis: {},
   };
 
-  if (state.mode === "views_likes") {
-    layout.title = { text: "Views × Likes（log-log）", x: 0.02 };
+  if (state.mode === "views_days") {
+    layout.title = { text: "流入（x: days linear固定 / y: log切替）", x: 0.02 };
+    layout.xaxis = { title: "days since publish", type: "linear", gridcolor: "rgba(255,255,255,0.06)" };
+    layout.yaxis = { title: "views", type: state.yLog ? "log" : "linear", gridcolor: "rgba(255,255,255,0.06)" };
+  } else {
+    layout.title = { text: "高評価（log-log）", x: 0.02 };
     layout.xaxis = { title: "views", type: "log", gridcolor: "rgba(255,255,255,0.06)" };
     layout.yaxis = { title: "likes", type: "log", gridcolor: "rgba(255,255,255,0.06)" };
-  } else {
-    layout.title = { text: "Days × Views（x: linear固定 / y: log切替）", x: 0.02 };
-    // ★横軸は常に linear
-    layout.xaxis = { title: "days since publish", type: "linear", gridcolor: "rgba(255,255,255,0.06)" };
-    // ★縦軸はトグル
-    layout.yaxis = { title: "views", type: state.yLog ? "log" : "linear", gridcolor: "rgba(255,255,255,0.06)" };
   }
 
-  await Plotly.newPlot("plot", [scatter, ...lines], layout, {
-    displayModeBar: true,
-    responsive: true,
-  });
+  await Plotly.newPlot("plot", [scatter, ...lines], layout, { displayModeBar:true, responsive:true });
 
-  // 赤点パルス
   state.redPlotPoints = computeRedPlotPoints(rows, state.mode);
   syncPulseCanvasToPlot();
   ensurePulseLoop();
@@ -624,16 +652,16 @@ function renderRedList(bundle) {
   for (const p of list) {
     const id = getVideoId(p) || p.video_id || "";
     const title = getTitle(p);
-    const anomaly = getAnomalyRatio(p);
-    const views = getViews(p);
-    const likes = getLikes(p);
+    const ar = getAnomalyRatio(p);
+    const v = getViews(p);
+    const l = getLikes(p);
     const url = youtubeUrl(id);
 
     const div = document.createElement("div");
     div.className = "item";
     div.innerHTML = `
       <div class="t"><a href="${url}" target="_blank" rel="noreferrer">${escapeHtml(title)}</a></div>
-      <div class="m">anomaly_ratio: ${Number.isFinite(anomaly) ? anomaly.toFixed(2) : "?"} / views: ${Number.isFinite(views) ? fmtInt(views) : "?"} / likes: ${Number.isFinite(likes) ? fmtInt(likes) : "?"}</div>
+      <div class="m">anomaly_ratio: ${Number.isFinite(ar) ? ar.toFixed(2) : "?"} / views: ${Number.isFinite(v) ? fmtInt(v) : "?"} / likes: ${Number.isFinite(l) ? fmtInt(l) : "?"}</div>
     `;
     root.appendChild(div);
   }
@@ -643,11 +671,25 @@ function renderRedList(bundle) {
 async function boot() {
   $("#btnViewsDays")?.addEventListener("click", () => setMode("views_days"));
   $("#btnViewsLikes")?.addEventListener("click", () => setMode("views_likes"));
-
   $("#btnYLog")?.addEventListener("click", () => setYLog(true));
   $("#btnYLin")?.addEventListener("click", () => setYLog(false));
 
+  $("#btnInputSelect")?.addEventListener("click", () => setInputMode("select"));
+  $("#btnInputManual")?.addEventListener("click", () => setInputMode("manual"));
+
+  $("#btnLoadInput")?.addEventListener("click", async () => {
+    const raw = $("#channelInput")?.value || "";
+    const id = findChannelIdByManualInput(raw);
+    if (!id) {
+      showManualHint("未監視のため表示できません（watchlistに追加して次回weeklyで生成してください）");
+      return;
+    }
+    showManualHint("");
+    await setChannel(id);
+  });
+
   updateYScaleButtons();
+  setInputMode("select");
 
   const index = await fetchJson(`${DATA_BASE}/index.json`);
   state.index = index;
@@ -662,7 +704,6 @@ async function boot() {
     await setChannel(channelId);
   } else {
     await Plotly.newPlot("plot", [], { title: "no channel" }, { responsive: true });
-    stopPulseLoop();
   }
 }
 
