@@ -39,6 +39,12 @@ function escapeHtml(s) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+const LABEL_COLOR = {
+  NORMAL: "#1f49d1ff",   // blue
+  YELLOW: "#f6fa15ff",   // yellow
+  ORANGE: "rgba(251, 168, 60, 1)",   // orange
+  RED: "#ef4444",      // red
+};
 
 function pick(obj, keys) {
   for (const k of keys) {
@@ -370,6 +376,7 @@ function drawPlot(bundle) {
   const x = [];
   const y = [];
   const hover = [];
+  const colors = [];
 
   for (const p of rows) {
     const videoId = getVideoId(p);
@@ -377,6 +384,7 @@ function drawPlot(bundle) {
     const days = getDays(p);
     const views = getViews(p);
     const likes = getLikes(p);
+
 
     const ratioNat = getRatioNat(p);
     const ratioLike = getRatioLike(p);
@@ -407,6 +415,8 @@ function drawPlot(bundle) {
       `anomaly_ratio: ${Number.isFinite(anomaly) ? anomaly.toFixed(2) : "?"}`,
       `<a href="${url}" target="_blank" rel="noreferrer">open</a>`,
     ].join("<br>"));
+    colors.push(LABEL_COLOR[label] || "#94a3b8"); // fallback gray
+
   }
 
   const scatter = {
