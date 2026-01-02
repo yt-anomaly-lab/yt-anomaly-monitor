@@ -25,6 +25,12 @@
         <button id="btnViewsDays" class="btn active" type="button">Views × Days</button>
         <button id="btnViewsLikes" class="btn" type="button">Views × Likes</button>
       </div>
+
+      <!-- 自然流入図(Views×Days)専用: 縦軸 log on/off -->
+      <div class="toggle" role="group" aria-label="y axis scale">
+        <button id="btnYLog" class="btn active" type="button">Y: log</button>
+        <button id="btnYLin" class="btn" type="button">Y: linear</button>
+      </div>
     </div>
   </header>
 
@@ -32,7 +38,6 @@
     <section class="panel">
       <div id="plotWrap" class="plot-wrap">
         <div id="plot" class="plot"></div>
-        <!-- 赤点パルス専用オーバーレイ（Plotlyの上） -->
         <canvas id="plotPulse" class="plot-pulse"></canvas>
       </div>
 

@@ -4,10 +4,10 @@ const DATA_BASE = "./data";
 
 /* 点の色（ラベル別） */
 const LABEL_COLOR = {
-  NORMAL: "#3b82f6", // blue
-  YELLOW: "#facc15", // yellow
-  ORANGE: "#fb923c", // orange
-  RED: "#ef4444",    // red
+  NORMAL: "#3b82f6",
+  YELLOW: "#facc15",
+  ORANGE: "#fb923c",
+  RED: "#ef4444",
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -15,10 +15,11 @@ const $ = (sel) => document.querySelector(sel);
 const state = {
   index: null,
   currentChannelId: null,
-  mode: "views_days", // "views_days" | "views_likes"
+  mode: "views_days",   // "views_days" | "views_likes"
+  yLog: true,           // ★自然流入図(views_days)の縦軸 log on/off
   channelCache: new Map(),
-  // Plotly上で実際に描画している赤点（data座標）
-  redPlotPoints: [], // {x, y, strength, title, videoId}
+
+  redPlotPoints: [],    // {x, y, strength, title, videoId}
   pulseRunning: false,
   pulseT: 0,
 };
@@ -66,19 +67,7 @@ function getWorstAnomaly(ch) {
   return safeNum(ch?.max_anomaly_ratio, safeNum(ch?.worst_anomaly, safeNum(ch?.worst, NaN)));
 }
 
-/* ---------- latest_points.json 互換（あなたの形式） ----------
-{
-  run_at_utc: "...",
-  points: [
-    {
-      video_id, title, publishedAt, days,
-      viewCount, likeCount,
-      ratio_nat, ratio_like, anomaly_ratio,
-      observed_label, display_label, sticky_red
-    }
-  ]
-}
-*/
+/* ---------- latest_points.json（あなたの形式） ---------- */
 function normalizePoints(pointsJson) {
   if (Array.isArray(pointsJson)) return pointsJson;
   if (pointsJson && Array.isArray(pointsJson.points)) return pointsJson.points;
@@ -95,15 +84,14 @@ function getTitle(p) {
 function getDays(p) {
   const d = pick(p, ["days", "days_since_publish", "daysSincePublish"]);
   const dn = safeNum(d, NaN);
-  if (dn > 0) return dn;
+  if (dn >= 0) return dn;
 
-  // 念のため publishedAt から算出（後方互換）
   const pub = p?.publishedAt || p?.snippet?.publishedAt;
   if (!pub) return NaN;
   const pubMs = Date.parse(pub);
   if (!Number.isFinite(pubMs)) return NaN;
   const diff = (Date.now() - pubMs) / (1000 * 60 * 60 * 24);
-  return diff > 0 ? diff : NaN;
+  return diff >= 0 ? diff : NaN;
 }
 function getViews(p) {
   const v =
@@ -172,11 +160,38 @@ function renderChannelSelect(index) {
   });
 }
 
+function updateYScaleButtons() {
+  const btnLog = $("#btnYLog");
+  const btnLin = $("#btnYLin");
+  if (!btnLog || !btnLin) return;
+
+  const enabled = (state.mode === "views_days");
+  btnLog.disabled = !enabled;
+  btnLin.disabled = !enabled;
+
+  btnLog.classList.toggle("active", enabled && state.yLog);
+  btnLin.classList.toggle("active", enabled && !state.yLog);
+}
+
 function setMode(mode) {
   state.mode = mode;
+
   $("#btnViewsDays")?.classList.toggle("active", mode === "views_days");
   $("#btnViewsLikes")?.classList.toggle("active", mode === "views_likes");
 
+  updateYScaleButtons();
+
+  if (state.currentChannelId) {
+    const cached = state.channelCache.get(state.currentChannelId);
+    if (cached) drawPlot(cached);
+  }
+}
+
+function setYLog(on) {
+  state.yLog = !!on;
+  updateYScaleButtons();
+
+  if (state.mode !== "views_days") return;
   if (state.currentChannelId) {
     const cached = state.channelCache.get(state.currentChannelId);
     if (cached) drawPlot(cached);
@@ -230,10 +245,19 @@ function renderBaselineInfo(bundle) {
     ` b=${Number.isFinite(bb) ? bb.toFixed(3) : "?"}` +
     ` upper_ratio_ref=${Number.isFinite(upper) ? upper.toFixed(2) : "?"}` +
     ` med_like_rate=${Number.isFinite(medLike) ? medLike.toExponential(2) : "?"}` +
-    ` / points=${Array.isArray(bundle?.points) ? bundle.points.length : 0}`;
+    ` / points=${Array.isArray(bundle?.points) ? bundle.points.length : 0}` +
+    ` / y=${state.mode === "views_days" ? (state.yLog ? "log" : "linear") : "log"}`;
 }
 
 /* ---------- baseline 線 ---------- */
+function linspace(xmin, xmax, n) {
+  if (n <= 1) return [xmin];
+  const arr = [];
+  const step = (xmax - xmin) / (n - 1);
+  for (let i = 0; i < n; i++) arr.push(xmin + step * i);
+  return arr;
+}
+
 function logspace(xmin, xmax, n) {
   const lo = Math.log10(xmin);
   const hi = Math.log10(xmax);
@@ -252,7 +276,7 @@ function buildBaselineTraces(mode, rows, baseline) {
   const medLikeRate = safeNum(baseline?.med_like_rate, NaN);
 
   if (!rows.length) return [];
-  const N = 80;
+  const N = 120;
 
   if (mode === "views_likes") {
     const viewsArr = rows.map((p) => getViews(p)).filter((v) => v > 0);
@@ -280,17 +304,19 @@ function buildBaselineTraces(mode, rows, baseline) {
     return traces;
   }
 
-  // views_days
-  const daysArr = rows.map((p) => getDays(p)).filter((v) => v > 0);
+  // views_days：横軸はリニア固定なので linspace
+  const daysArr = rows.map((p) => getDays(p)).filter((v) => v >= 0);
   if (!daysArr.length || !(Number.isFinite(a) && Number.isFinite(b))) return [];
 
   const xmin = Math.min(...daysArr);
   const xmax = Math.max(...daysArr);
-  const xs = logspace(xmin, xmax, N);
+
+  const xs = linspace(Math.max(0, xmin), Math.max(0, xmax), N);
 
   const pred = xs.map((d) => {
-    const ld = Math.log10(d);
-    const lv = a + b * ld;
+    // log-log 回帰式から期待値を出す（d=0 回避）
+    const dd = Math.max(1e-6, d);
+    const lv = a + b * Math.log10(dd);
     return Math.pow(10, lv);
   });
 
@@ -312,9 +338,7 @@ function buildBaselineTraces(mode, rows, baseline) {
 }
 
 /* ---------- Plot + 赤点パルス ---------- */
-
 function computeRedPlotPoints(rows, mode) {
-  // 今表示している座標系に合わせて赤点の (x,y) を集める
   const red = [];
   for (const p of rows) {
     const label = getLabel(p);
@@ -327,40 +351,29 @@ function computeRedPlotPoints(rows, mode) {
 
     let x, y;
     if (mode === "views_likes") {
-      x = views;
-      y = likes;
+      x = views; y = likes;
     } else {
-      x = days;
-      y = views;
+      x = days; y = views;
     }
-    if (!(x > 0 && y > 0)) continue;
+    if (!(x >= 0 && y > 0)) continue;
 
     const ar = getAnomalyRatio(p);
-    // 強さ：logスケールで適当に正規化
     const strength = Math.max(0.15, Math.min(1.0, Math.log10(ar + 1) / 2.0));
 
-    red.push({
-      x, y,
-      strength,
-      title: getTitle(p),
-      videoId: getVideoId(p),
-      anomaly: ar,
-    });
+    red.push({ x, y, strength, title: getTitle(p), videoId: getVideoId(p), anomaly: ar });
   }
   return red;
 }
 
 function syncPulseCanvasToPlot() {
-  const wrap = $("#plotWrap");
   const gd = $("#plot");
   const c = $("#plotPulse");
-  if (!wrap || !gd || !c || !gd._fullLayout) return;
+  if (!gd || !c || !gd._fullLayout) return;
 
   const fl = gd._fullLayout;
   const sz = fl._size; // {l,t,w,h}
   if (!sz) return;
 
-  // plotWrap の左上を基準に、プロット領域の位置へ canvas を移動
   c.style.left = `${sz.l}px`;
   c.style.top = `${sz.t}px`;
   c.style.right = "auto";
@@ -375,7 +388,6 @@ function syncPulseCanvasToPlot() {
 }
 
 function dataToPixel(gd, x, y) {
-  // plot領域ローカル座標 (px,py) を返す
   const fl = gd._fullLayout;
   if (!fl) return null;
   const xa = fl.xaxis;
@@ -383,13 +395,9 @@ function dataToPixel(gd, x, y) {
   const sz = fl._size;
   if (!xa || !ya || !sz) return null;
 
-  // Plotly軸オブジェクトの c2p を使う（log軸もOK）
-  // 返値は「プロット領域内」の座標（基準がズレる場合があるので保険で補正）
   let px = xa.c2p(x);
   let py = ya.c2p(y);
 
-  // 念のため「全体基準」だった場合に備えて補正
-  // （多くの環境では不要だが、安全にする）
   if (px > sz.w + sz.l) px -= sz.l;
   if (py > sz.h + sz.t) py -= sz.t;
 
@@ -411,7 +419,6 @@ function drawPulses() {
 
   const t = state.pulseT;
   const points = state.redPlotPoints;
-
   if (!points || points.length === 0) return;
 
   for (let i = 0; i < points.length; i++) {
@@ -421,11 +428,8 @@ function drawPulses() {
 
     const x = xy.px * dpr;
     const y = xy.py * dpr;
-
-    // 描画領域外はスキップ
     if (!(x >= -50 && x <= w + 50 && y >= -50 && y <= h + 50)) continue;
 
-    // ドクドク：位相をずらして個体差
     const phase = (i * 17) % 97;
     const beat = 0.5 + 0.5 * Math.sin((t * 0.22) + phase) * Math.sin((t * 0.07) + phase * 0.3);
 
@@ -454,32 +458,45 @@ function pulseLoop() {
   drawPulses();
   requestAnimationFrame(pulseLoop);
 }
-
 function ensurePulseLoop() {
   if (state.pulseRunning) return;
   state.pulseRunning = true;
   state.pulseT = 0;
   requestAnimationFrame(pulseLoop);
 }
-
 function stopPulseLoop() {
   state.pulseRunning = false;
+}
+
+/* Plotlyイベントの多重登録防止 */
+let plotEventsAttached = false;
+function attachPlotEventsOnce() {
+  if (plotEventsAttached) return;
+  plotEventsAttached = true;
+
+  const gd = $("#plot");
+  if (!gd) return;
+
+  gd.on("plotly_afterplot", () => syncPulseCanvasToPlot());
+  gd.on("plotly_relayout", () => syncPulseCanvasToPlot());
+
+  window.addEventListener("resize", () => syncPulseCanvasToPlot());
 }
 
 async function drawPlot(bundle) {
   const points = Array.isArray(bundle?.points) ? bundle.points : [];
   const baseline = bundle?.latest?.baseline || {};
 
-  // log軸：最低条件（正）
   const rows = points.filter((p) => {
     const views = getViews(p);
     const days = getDays(p);
+    const likes = getLikes(p);
+
     if (!(views > 0)) return false;
 
-    if (state.mode === "views_days") return days > 0;
-
-    // views_likes
-    const likes = getLikes(p);
+    if (state.mode === "views_days") {
+      return days >= 0;
+    }
     return likes > 0;
   });
 
@@ -500,11 +517,9 @@ async function drawPlot(bundle) {
 
     let xv, yv;
     if (state.mode === "views_likes") {
-      xv = views;
-      yv = likes;
+      xv = views; yv = likes;
     } else {
-      xv = days;
-      yv = views;
+      xv = days; yv = views;
     }
 
     x.push(xv);
@@ -533,11 +548,7 @@ async function drawPlot(bundle) {
     y,
     text: hover,
     hoverinfo: "text",
-    marker: {
-      size: sizes,
-      opacity: 0.9,
-      color: colors,
-    },
+    marker: { size: sizes, opacity: 0.9, color: colors },
   };
 
   const lines = buildBaselineTraces(state.mode, rows, baseline);
@@ -557,9 +568,11 @@ async function drawPlot(bundle) {
     layout.xaxis = { title: "views", type: "log", gridcolor: "rgba(255,255,255,0.06)" };
     layout.yaxis = { title: "likes", type: "log", gridcolor: "rgba(255,255,255,0.06)" };
   } else {
-    layout.title = { text: "Days × Views（log-log）", x: 0.02 };
-    layout.xaxis = { title: "days since publish", type: "log", gridcolor: "rgba(255,255,255,0.06)" };
-    layout.yaxis = { title: "views", type: "log", gridcolor: "rgba(255,255,255,0.06)" };
+    layout.title = { text: "Days × Views（x: linear固定 / y: log切替）", x: 0.02 };
+    // ★横軸は常に linear
+    layout.xaxis = { title: "days since publish", type: "linear", gridcolor: "rgba(255,255,255,0.06)" };
+    // ★縦軸はトグル
+    layout.yaxis = { title: "views", type: state.yLog ? "log" : "linear", gridcolor: "rgba(255,255,255,0.06)" };
   }
 
   await Plotly.newPlot("plot", [scatter, ...lines], layout, {
@@ -567,36 +580,14 @@ async function drawPlot(bundle) {
     responsive: true,
   });
 
-  // 赤点（現モード座標）を確定してパルスへ渡す
+  // 赤点パルス
   state.redPlotPoints = computeRedPlotPoints(rows, state.mode);
-
-  // canvas を plot領域に同期し、アニメ開始
   syncPulseCanvasToPlot();
   ensurePulseLoop();
-
-  // plotly の描画完了・リレイアウトで追従させる（イベントは多重登録しない）
   attachPlotEventsOnce();
-}
 
-/* Plotlyイベントの多重登録防止 */
-let plotEventsAttached = false;
-function attachPlotEventsOnce() {
-  if (plotEventsAttached) return;
-  plotEventsAttached = true;
-
-  const gd = $("#plot");
-  if (!gd) return;
-
-  gd.on("plotly_afterplot", () => {
-    syncPulseCanvasToPlot();
-  });
-  gd.on("plotly_relayout", () => {
-    syncPulseCanvasToPlot();
-  });
-
-  window.addEventListener("resize", () => {
-    syncPulseCanvasToPlot();
-  });
+  updateYScaleButtons();
+  renderBaselineInfo(bundle);
 }
 
 /* ---------- RED list ---------- */
@@ -652,6 +643,11 @@ function renderRedList(bundle) {
 async function boot() {
   $("#btnViewsDays")?.addEventListener("click", () => setMode("views_days"));
   $("#btnViewsLikes")?.addEventListener("click", () => setMode("views_likes"));
+
+  $("#btnYLog")?.addEventListener("click", () => setYLog(true));
+  $("#btnYLin")?.addEventListener("click", () => setYLog(false));
+
+  updateYScaleButtons();
 
   const index = await fetchJson(`${DATA_BASE}/index.json`);
   state.index = index;
