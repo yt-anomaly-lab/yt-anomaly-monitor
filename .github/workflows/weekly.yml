@@ -38,3 +38,10 @@ jobs:
           rm -rf site/data
           mkdir -p site/data
           cp -r data/* site/data/
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Run weekly script
+        env:
+          YT_API_KEY: ${{ secrets.YT_API_KEY }}
+        run: python tools/run_weekly.py
