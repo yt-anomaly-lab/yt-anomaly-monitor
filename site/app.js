@@ -220,8 +220,8 @@ function renderBaselineInfo(bundle) {
   const up = safeNum(b?.NAT_UPPER_RATIO, NaN);
   $("#baselineInfo").textContent =
     `Channel: ${title}` +
-    ` / nat: log10(V)=a+b*days (a=${Number.isFinite(a)?a.toFixed(3):"?"}, b=${Number.isFinite(bb)?bb.toExponential(2):"?"})` +
-    ` / like: log10(V)=b0+b1*log10(L) (b0=${Number.isFinite(b0)?b0.toFixed(3):"?"}, b1=${Number.isFinite(b1)?b1.toFixed(3):"?"})` +
+    ` / nat: ln(V)=a+b*days (a=${Number.isFinite(a)?a.toFixed(3):"?"}, b=${Number.isFinite(bb)?bb.toExponential(2):"?"})` +
+    ` / like: ln(V)=b0+b1*ln(L) (b0=${Number.isFinite(b0)?b0.toFixed(3):"?"}, b1=${Number.isFinite(b1)?b1.toFixed(3):"?"})` +
     ` / upper=${Number.isFinite(up)?up.toFixed(2):"?"}*${UPPER_MULT.toFixed(2)}` +
     ` / pulse=${PULSE_SPEED.toFixed(2)}`;
 }
@@ -255,7 +255,7 @@ function buildBaselineTraces(mode, rows, baseline) {
     const NAT_UP = safeNum(baseline?.NAT_UPPER_RATIO, NaN) * UPPER_MULT;
     if (!(Number.isFinite(a) && Number.isFinite(b) && Number.isFinite(NAT_UP))) return [];
 
-    // make_plots: t_line = linspace(1, t.max(), 400) :contentReference[oaicite:14]{index=14}
+    // make_plots: t_line = linspace(1, t.max(), 400)
     const daysArr = rows.map(getDays).filter(v => Number.isFinite(v));
     const tmax = Math.max(...daysArr, 1);
     const t_line = linspace(1, tmax, N);
@@ -512,11 +512,11 @@ async function drawPlot(bundle) {
   };
 
   if (state.mode === "views_days") {
-    layout.title = { text: "流入（x: linear固定 / y: log切替）", x: 0.02 };
+    layout.title = { text: "再生数乖離評価", x: 0.02 };
     layout.xaxis = { title: "days since publish", type: "linear", gridcolor: "rgba(255,255,255,0.06)" };
     layout.yaxis = { title: "views", type: state.yLog ? "log" : "linear", gridcolor: "rgba(255,255,255,0.06)" };
   } else {
-    layout.title = { text: "高評価（log-log）", x: 0.02 };
+    layout.title = { text: "高評価乖離評価", x: 0.02 };
     layout.xaxis = { title: "views", type: "log", gridcolor: "rgba(255,255,255,0.06)" };
     layout.yaxis = { title: "likes", type: "log", gridcolor: "rgba(255,255,255,0.06)" };
   }
@@ -559,7 +559,7 @@ function renderRedList(bundle) {
   });
 
   if (!list.length) {
-    root.innerHTML = `<div class="item"><div class="m">RED上位がありません</div></div>`;
+    root.innerHTML = `<div class="item"><div class="m">異常値が上位の動画がありません</div></div>`;
     return;
   }
 
@@ -593,7 +593,7 @@ async function boot() {
     const raw = $("#channelInput")?.value || "";
     const id = findChannelIdByManualInput(raw);
     if (!id) {
-      showManualHint("未監視のため表示できません（watchlistに追加→次回weeklyで生成）");
+      showManualHint("このUIでは未監視チャンネルはまだ表示できません（オンデマンド結果の自動反映は未実装）");
       return;
     }
     showManualHint("");
