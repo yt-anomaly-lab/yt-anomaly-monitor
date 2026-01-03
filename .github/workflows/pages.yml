@@ -1,13 +1,18 @@
 name: pages
 
 on:
+  workflow_run:
+    workflows: ["weekly"]
+    types:
+      - completed
+
+  workflow_dispatch:
+
   push:
     branches: ["main"]
     paths:
       - "site/**"
-      - "site/data/**"
       - ".github/workflows/pages.yml"
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -20,10 +25,12 @@ concurrency:
 
 jobs:
   deploy:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
