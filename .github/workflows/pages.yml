@@ -2,7 +2,7 @@ name: pages
 
 on:
   workflow_run:
-    workflows: ["weekly"]
+    workflows: ["weekly", "ondemand"]
     types:
       - completed
 
