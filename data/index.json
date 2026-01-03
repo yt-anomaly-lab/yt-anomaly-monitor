@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-01-02T21:39:41.231383+00:00",
+  "generated_at_utc": "2026-01-03T08:07:49.622812+00:00",
   "watch_count": 1,
   "warnings": [],
   "channels": [
@@ -9,7 +9,7 @@
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 7,
-      "max_anomaly_ratio": 109.88803401260753
+      "max_anomaly_ratio": 115.71134725264942
     }
   ]
 }
