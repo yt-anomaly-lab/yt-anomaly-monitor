@@ -1,9 +1,8 @@
 /* global Plotly */
 
 const DATA_BASE = "./data";
-const ONDEMAND_ENDPOINT = "https://yt-ondemand.araki-69c.workers.dev/ondemand";
 
-/* ===== 調整パラメータ ===== */
+/* ===== 調整パラメータ（あなたの要望） ===== */
 const PULSE_SPEED = 0.65;     // ドクドク速度（小さいほど遅い）
 const UPPER_MULT  = 1.00;     // 上限倍率に掛ける追加係数（データ側 * これ）
 
@@ -15,12 +14,13 @@ const LABEL_COLOR = {
 };
 
 const $ = (sel) => document.querySelector(sel);
+const ONDEMAND_ENDPOINT = "https://yt-ondemand.araki-69c.workers.dev/ondemand";
 
 const state = {
   index: null,
   currentChannelId: null,
   mode: "views_days",
-  yLog: false, // ★流入図のYデフォルトはリニア
+  yLog: true,
   inputMode: "select",
   channelCache: new Map(),
 
@@ -28,11 +28,8 @@ const state = {
   pulseRunning: false,
   pulseT: 0,
   plotEventsAttached: false,
-
-  activeItemEl: null,
 };
 
-/* ---------- utils ---------- */
 function safeNum(v, dflt = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : dflt;
@@ -61,7 +58,6 @@ function pick(obj, keys) {
   for (const k of keys) if (obj && obj[k] != null) return obj[k];
   return undefined;
 }
-function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 
 /* ---------- index.json 互換 ---------- */
 function getChannelId(ch) { return ch?.channel_id || ch?.channelId || ch?.id || ""; }
@@ -78,7 +74,7 @@ function normalizePoints(pointsJson) {
 }
 function getVideoId(p) { return p?.videoId || p?.video_id || p?.id || ""; }
 function getTitle(p) { return p?.title || "(no title)"; }
-function getDays(p) { return safeNum(p?.t_days, safeNum(p?.days, NaN)); } // t_days 優先
+function getDays(p) { return safeNum(p?.t_days, safeNum(p?.days, NaN)); } // t_days を優先（make_plots）
 function getViews(p) { return safeNum(p?.viewCount, safeNum(p?.views, NaN)); }
 function getLikes(p) { return safeNum(p?.likeCount, safeNum(p?.likes, NaN)); }
 function getLabel(p) { return String(pick(p, ["display_label", "observed_label", "label"]) ?? "NORMAL").toUpperCase(); }
@@ -86,7 +82,7 @@ function getAnomalyRatio(p) { return safeNum(p?.anomaly_ratio, NaN); }
 function getRatioNat(p) { return safeNum(p?.ratio_nat, NaN); }
 function getRatioLike(p) { return safeNum(p?.ratio_like, NaN); }
 
-/* ---------- 入力モード ---------- */
+/* ---------- 入力モード（既存UIを維持） ---------- */
 function setInputMode(mode) {
   state.inputMode = mode;
   $("#btnInputSelect")?.classList.toggle("active", mode === "select");
@@ -94,19 +90,10 @@ function setInputMode(mode) {
   $("#selectBox")?.classList.toggle("hidden", mode !== "select");
   $("#manualBox")?.classList.toggle("hidden", mode !== "manual");
 }
-function showManualHint(msg) {
-  const el = $("#manualHint");
-  if (el) el.textContent = msg || "";
-}
+function showManualHint(msg) { const el = $("#manualHint"); if (el) el.textContent = msg || ""; }
 
-/* ---------- manual入力の解決 ---------- */
-function normalizeManualInput(raw){
-  return String(raw || "").trim();
-}
-
-/* 未監視でも解析させたいので、ここで「確定IDに解決できなくてもOK」 */
-function tryResolveKnownChannelId(raw) {
-  const s = normalizeManualInput(raw);
+function findChannelIdByManualInput(raw) {
+  const s = String(raw || "").trim();
   if (!s) return null;
   if (s.startsWith("UC")) return s;
 
@@ -121,132 +108,56 @@ function tryResolveKnownChannelId(raw) {
   return hit ? getChannelId(hit) : null;
 }
 
-/* ---------- UI: Channels（異常度ワースト順） ---------- */
-function setActiveItem(el){
-  if (state.activeItemEl) state.activeItemEl.classList.remove("active");
-  state.activeItemEl = el;
-  if (state.activeItemEl) state.activeItemEl.classList.add("active");
-}
-
-/* バッジは「選択したチャンネルのpointsから計算」できるが、一覧にはまず sticky_red を軸に出す。
-   ただし「黄色/オレンジが見えない」を解消するため、可能なら channelCache がある分はバッジも出す。 */
-function countLabels(points){
-  const c = { YELLOW:0, ORANGE:0, RED:0 };
-  for (const p of points || []) {
-    const lab = getLabel(p);
-    if (lab === "YELLOW") c.YELLOW++;
-    else if (lab === "ORANGE") c.ORANGE++;
-    else if (lab === "RED" || p?.sticky_red === true) c.RED++;
-  }
-  return c;
-}
-
+/* ---------- UI ---------- */
 function renderChannelList(index) {
   const root = $("#channelList");
   if (!root) return;
   root.innerHTML = "";
-
-  const arr0 = Array.isArray(index?.channels) ? index.channels : [];
-
-  /* ★レッド0（sticky_red_count=0）は表示しない */
-  const arr = arr0
-    .filter(ch => getStickyCount(ch) > 0)
-    .slice();
-
-  /* ★異常度ワースト順（降順） */
-  arr.sort((a,b) => {
-    const wa = getWorstAnomaly(a);
-    const wb = getWorstAnomaly(b);
-    const aa = Number.isFinite(wa) ? wa : -Infinity;
-    const bb = Number.isFinite(wb) ? wb : -Infinity;
-    return bb - aa;
-  });
-
-  /* 多すぎると重いので上位だけ */
-  arr.slice(0, 80).forEach((ch) => {
+  const arr = Array.isArray(index?.channels) ? index.channels : [];
+  arr.slice(0, 60).forEach((ch) => {
     const div = document.createElement("div");
     div.className = "item";
-
-    const id = getChannelId(ch);
     const title = getChannelTitle(ch);
     const worst = getWorstAnomaly(ch);
     const sticky = getStickyCount(ch);
-
-    // キャッシュがあればバッジを出す（無ければ sticky_red のみ）
-    const cached = id ? state.channelCache.get(id) : null;
-    const counts = cached ? countLabels(cached.points) : null;
-
-    const badgesHtml = counts ? `
-      <div class="badges">
-        <span class="badge yellow">Y:${counts.YELLOW}</span>
-        <span class="badge orange">O:${counts.ORANGE}</span>
-        <span class="badge red">R:${counts.RED}</span>
-      </div>
-    ` : `
-      <div class="badges">
-        <span class="badge red">R:${sticky}</span>
-      </div>
-    `;
-
     div.innerHTML = `
       <div class="t">${escapeHtml(title)}</div>
       <div class="m">worst: ${Number.isFinite(worst) ? worst.toFixed(2) : "?"} / sticky_red: ${sticky}</div>
-      ${badgesHtml}
     `;
-
     div.addEventListener("click", () => {
-      if (!id) return;
-      setActiveItem(div);
-      setChannel(id).catch(console.error);
+      const id = getChannelId(ch);
+      if (id) setChannel(id);
     });
-
-    // 初期選択の見た目
-    if (id && id === state.currentChannelId) setActiveItem(div);
-
     root.appendChild(div);
   });
-
-  if (!root.childElementCount){
-    root.innerHTML = `<div class="item"><div class="m">表示対象がありません（RED=0は非表示）</div></div>`;
-  }
 }
 
 function renderChannelSelect(index) {
   const sel = $("#channelSelect");
   if (!sel) return;
   sel.innerHTML = "";
-
-  const arr0 = Array.isArray(index?.channels) ? index.channels : [];
-  // select側は全部入れてOK（sticky=0でも選べる）※ここは好みで filter 可能
-  arr0.forEach((ch) => {
+  const arr = Array.isArray(index?.channels) ? index.channels : [];
+  arr.forEach((ch) => {
     const opt = document.createElement("option");
     opt.value = getChannelId(ch);
     opt.textContent = `${getChannelTitle(ch)} (sticky_red=${getStickyCount(ch)})`;
     sel.appendChild(opt);
   });
-
   sel.addEventListener("change", () => {
     const id = sel.value;
-    if (id) setChannel(id).catch(console.error);
+    if (id) setChannel(id);
   });
 }
 
-/* ---------- mode / yscale ---------- */
 function updateYScaleButtons() {
   const btnLog = $("#btnYLog");
   const btnLin = $("#btnYLin");
   if (!btnLog || !btnLin) return;
-
   const enabled = (state.mode === "views_days");
   btnLog.disabled = !enabled;
   btnLin.disabled = !enabled;
-
   btnLog.classList.toggle("active", enabled && state.yLog);
   btnLin.classList.toggle("active", enabled && !state.yLog);
-
-  // 説明文の切替
-  $("#descViewsDays")?.classList.toggle("hidden", state.mode !== "views_days");
-  $("#descViewsLikes")?.classList.toggle("hidden", state.mode !== "views_likes");
 }
 
 function setMode(mode) {
@@ -254,10 +165,9 @@ function setMode(mode) {
   $("#btnViewsDays")?.classList.toggle("active", mode === "views_days");
   $("#btnViewsLikes")?.classList.toggle("active", mode === "views_likes");
   updateYScaleButtons();
-
   if (state.currentChannelId) {
     const cached = state.channelCache.get(state.currentChannelId);
-    if (cached) drawPlot(cached).catch(console.error);
+    if (cached) drawPlot(cached);
   }
 }
 
@@ -265,14 +175,13 @@ function setYLog(on) {
   state.yLog = !!on;
   updateYScaleButtons();
   if (state.mode !== "views_days") return;
-
   if (state.currentChannelId) {
     const cached = state.channelCache.get(state.currentChannelId);
-    if (cached) drawPlot(cached).catch(console.error);
+    if (cached) drawPlot(cached);
   }
 }
 
-/* ---------- load bundle ---------- */
+/* ---------- load ---------- */
 async function loadChannelBundle(channelId) {
   if (state.channelCache.has(channelId)) return state.channelCache.get(channelId);
 
@@ -292,7 +201,6 @@ async function loadChannelBundle(channelId) {
 
 async function setChannel(channelId) {
   state.currentChannelId = channelId;
-
   const sel = $("#channelSelect");
   if (sel) sel.value = channelId;
 
@@ -300,12 +208,8 @@ async function setChannel(channelId) {
   renderBaselineInfo(bundle);
   await drawPlot(bundle);
   renderRedList(bundle);
-
-  // 一覧のバッジ更新のため、再描画（キャッシュが増えていく）
-  if (state.index) renderChannelList(state.index);
 }
 
-/* ---------- baseline info ---------- */
 function renderBaselineInfo(bundle) {
   const b = bundle?.latest?.baseline || {};
   const title = bundle?.channel?.title || state.currentChannelId || "(unknown)";
@@ -314,23 +218,30 @@ function renderBaselineInfo(bundle) {
   const b0 = safeNum(b?.b0, NaN);
   const b1 = safeNum(b?.b1, NaN);
   const up = safeNum(b?.NAT_UPPER_RATIO, NaN);
-  const el = $("#baselineInfo");
-  if (!el) return;
-
-  el.textContent =
+  $("#baselineInfo").textContent =
     `Channel: ${title}` +
-    ` / nat: ln(V)=a+b*days (a=${Number.isFinite(a)?a.toFixed(3):"?"}, b=${Number.isFinite(bb)?bb.toExponential(2):"?"})` +
-    ` / like: ln(V)=b0+b1*ln(L) (b0=${Number.isFinite(b0)?b0.toFixed(3):"?"}, b1=${Number.isFinite(b1)?b1.toFixed(3):"?"})` +
+    ` / nat: log10(V)=a+b*days (a=${Number.isFinite(a)?a.toFixed(3):"?"}, b=${Number.isFinite(bb)?bb.toExponential(2):"?"})` +
+    ` / like: log10(V)=b0+b1*log10(L) (b0=${Number.isFinite(b0)?b0.toFixed(3):"?"}, b1=${Number.isFinite(b1)?b1.toFixed(3):"?"})` +
     ` / upper=${Number.isFinite(up)?up.toFixed(2):"?"}*${UPPER_MULT.toFixed(2)}` +
     ` / pulse=${PULSE_SPEED.toFixed(2)}`;
 }
 
-/* ---------- baseline lines（run_weekly と ln/exp で一致） ---------- */
+/* ---------- baseline lines（make_plots 完全一致） ---------- */
 function linspace(xmin, xmax, n) {
   if (n <= 1) return [xmin];
   const arr = [];
   const step = (xmax - xmin) / (n - 1);
   for (let i = 0; i < n; i++) arr.push(xmin + step * i);
+  return arr;
+}
+function logspace(xmin, xmax, n) {
+  const lo = Math.log10(xmin);
+  const hi = Math.log10(xmax);
+  const arr = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    arr.push(Math.pow( lo + (hi - lo) * t));
+  }
   return arr;
 }
 
@@ -344,15 +255,17 @@ function buildBaselineTraces(mode, rows, baseline) {
     const NAT_UP = safeNum(baseline?.NAT_UPPER_RATIO, NaN) * UPPER_MULT;
     if (!(Number.isFinite(a) && Number.isFinite(b) && Number.isFinite(NAT_UP))) return [];
 
+    // make_plots: t_line = linspace(1, t.max(), 400) :contentReference[oaicite:14]{index=14}
     const daysArr = rows.map(getDays).filter(v => Number.isFinite(v));
     const tmax = Math.max(...daysArr, 1);
     const t_line = linspace(1, tmax, N);
 
-    const log_center = t_line.map(t => a + b * t);                 // ln(V)
+    const log_center = t_line.map(t => a + b * t);          // ln(V)
     const log_upper  = log_center.map(lv => lv + Math.log(NAT_UP)); // lnで +ln
 
     const v_center = log_center.map(lv => Math.exp(lv));
     const v_upper  = log_upper.map(lv => Math.exp(lv));
+
 
     return [
       { type:"scatter", mode:"lines", name:"expected", x:t_line, y:v_center, hoverinfo:"skip", line:{ width:2, dash:"solid" } },
@@ -363,7 +276,7 @@ function buildBaselineTraces(mode, rows, baseline) {
   // views_likes:
   const b0 = safeNum(baseline?.b0, NaN);
   const b1 = safeNum(baseline?.b1, NaN);
-  const NAT_UP = safeNum(baseline?.NAT_UPPER_RATIO, NaN) * UPPER_MULT;
+  const NAT_UP = safeNum(baseline?.NAT_UPPER_RATIO, NaN) * UPPER_MULT; // 上限は右へ
   if (!(Number.isFinite(b0) && Number.isFinite(b1))) return [];
 
   const likesArr = rows.map(getLikes).filter(v => v > 0);
@@ -371,12 +284,13 @@ function buildBaselineTraces(mode, rows, baseline) {
   const lmin = Math.min(...likesArr);
   const lmax = Math.max(...likesArr);
 
-  // ln(L)を線形に振って ln(V)=b0+b1*ln(L)
-  const logL_line = linspace(Math.log(lmin), Math.log(lmax), 300);
-  const logV_line = logL_line.map(x => b0 + b1 * x);
+  // make_plots: x_line2 = linspace(logL.min, logL.max), y_line2=b0+b1*x_line2
+  const logL_line = linspace(Math.log(lmin), Math.log(lmax), 300); // ln(L)
+  const logV_line = logL_line.map(x => b0 + b1 * x);               // ln(V)
 
   const views_line = logV_line.map(lv => Math.exp(lv));
   const likes_line = logL_line.map(ll => Math.exp(ll));
+
 
   const traces = [
     { type:"scatter", mode:"lines", name:"expected", x:views_line, y:likes_line, hoverinfo:"skip", line:{ width:2, dash:"solid" } },
@@ -392,7 +306,7 @@ function buildBaselineTraces(mode, rows, baseline) {
   return traces;
 }
 
-/* ---------- pulse overlay ---------- */
+/* ---------- pulse overlay（現状維持） ---------- */
 function computeRedPlotPoints(rows, mode) {
   const red = [];
   for (const p of rows) {
@@ -409,7 +323,7 @@ function computeRedPlotPoints(rows, mode) {
     if (!(x >= 0 && y > 0)) continue;
 
     const ar = getAnomalyRatio(p);
-    const strength = Math.max(0.15, Math.min(1.0, Math.log10((Number.isFinite(ar)?ar:0) + 1) / 2.0));
+    const strength = Math.max(0.15, Math.min(1.0, Math.log10(ar + 1) / 2.0));
     red.push({ x, y, strength });
   }
   return red;
@@ -534,7 +448,7 @@ async function drawPlot(bundle) {
     const l = getLikes(p);
     const d = getDays(p);
     if (!(v > 0 && l > 0)) return false;
-    if (state.mode === "views_days") return d >= 1; // clip(lower=1)
+    if (state.mode === "views_days") return d >= 1; // make_plots: clip(lower=1)
     return true;
   });
 
@@ -560,12 +474,8 @@ async function drawPlot(bundle) {
 
     xs.push(x);
     ys.push(y);
-
-    // ★黄色/オレンジ/レッドの点色を label で出す（データが持っていればそのまま反映）
     colors.push(LABEL_COLOR[label] || "#94a3b8");
-
-    // サイズも少しだけ差をつける
-    sizes.push(label === "RED" ? 9 : (label === "ORANGE" ? 7 : (label === "YELLOW" ? 7 : 6)));
+    sizes.push(label === "RED" ? 9 : (label === "ORANGE" ? 7 : 6));
 
     hover.push([
       `<b>${escapeHtml(title)}</b>`,
@@ -622,7 +532,7 @@ async function drawPlot(bundle) {
   renderBaselineInfo(bundle);
 }
 
-/* ---------- RED top list ---------- */
+/* ---------- RED list ---------- */
 function normalizeRedTop(st) {
   const raw = Array.isArray(st?.red_top) ? st.red_top : Array.isArray(st?.redTop) ? st.redTop : [];
   return raw.map((it) => (typeof it === "string" ? { video_id: it } : it)).filter(Boolean);
@@ -649,7 +559,7 @@ function renderRedList(bundle) {
   });
 
   if (!list.length) {
-    root.innerHTML = `<div class="item"><div class="m">異常値が上位の動画がありません</div></div>`;
+    root.innerHTML = `<div class="item"><div class="m">RED上位がありません</div></div>`;
     return;
   }
 
@@ -659,57 +569,14 @@ function renderRedList(bundle) {
     const ar = getAnomalyRatio(p);
     const v = getViews(p);
     const l = getLikes(p);
-    const lab = getLabel(p);
 
     const div = document.createElement("div");
     div.className = "item";
     div.innerHTML = `
       <div class="t"><a href="${youtubeUrl(id)}" target="_blank" rel="noreferrer">${escapeHtml(title)}</a></div>
-      <div class="m">label: ${escapeHtml(lab)} / anomaly_ratio: ${Number.isFinite(ar) ? ar.toFixed(2) : "?"} / views: ${Number.isFinite(v) ? fmtInt(v) : "?"} / likes: ${Number.isFinite(l) ? fmtInt(l) : "?"}</div>
+      <div class="m">anomaly_ratio: ${Number.isFinite(ar) ? ar.toFixed(2) : "?"} / views: ${Number.isFinite(v) ? fmtInt(v) : "?"} / likes: ${Number.isFinite(l) ? fmtInt(l) : "?"}</div>
     `;
     root.appendChild(div);
-  }
-}
-
-/* ---------- ondemand ---------- */
-async function startOndemand(rawInput){
-  const payload = { channel: normalizeManualInput(rawInput) };
-  const r = await fetch(ONDEMAND_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!r.ok) {
-    const t = await r.text().catch(()=>"");
-    throw new Error(`ondemand failed (${r.status}) ${t}`);
-  }
-  return await r.json().catch(() => ({}));
-}
-
-/* Pagesに生成物が来るのを待つ（workflow→commit→pages を想定） */
-async function waitForChannelReady(channelId, tries=60, intervalMs=3000){
-  for (let i=0;i<tries;i++){
-    try{
-      const base = `${DATA_BASE}/channels/${channelId}`;
-      await fetchJson(`${base}/latest_points.json`);
-      return true;
-    }catch(_e){
-      // まだ来てない
-    }
-    await sleep(intervalMs);
-  }
-  return false;
-}
-
-/* index.jsonの更新を取り直して select/list に反映 */
-async function refreshIndex(){
-  try{
-    const index = await fetchJson(`${DATA_BASE}/index.json`);
-    state.index = index;
-    renderChannelSelect(index);
-    renderChannelList(index);
-  }catch(e){
-    console.warn("refreshIndex failed:", e);
   }
 }
 
@@ -722,65 +589,25 @@ async function boot() {
 
   $("#btnInputSelect")?.addEventListener("click", () => setInputMode("select"));
   $("#btnInputManual")?.addEventListener("click", () => setInputMode("manual"));
-
   $("#btnLoadInput")?.addEventListener("click", async () => {
-    const btn = $("#btnLoadInput");
     const raw = $("#channelInput")?.value || "";
-    const input = normalizeManualInput(raw);
-    if (!input) {
-      showManualHint("入力してください。");
+    const id = findChannelIdByManualInput(raw);
+    if (!id) {
+      showManualHint("未監視のため表示できません（watchlistに追加→次回weeklyで生成）");
       return;
     }
-
-    // 既知なら即表示も可能
-    const knownId = tryResolveKnownChannelId(input);
-
-    try{
-      if (btn) btn.disabled = true;
-      showManualHint("解析中…（オンデマンド起動 → Pages反映待ち）");
-
-      // 未監視でも worker に投げる（仕様どおり）
-      const res = await startOndemand(input);
-
-      // worker が channel_id を返す場合はそれを優先、無ければ knownId を使う
-      const cid = (res && (res.channel_id || res.channelId || res.id)) || knownId;
-
-      if (!cid) {
-        showManualHint("オンデマンドは起動しました。チャンネルIDの特定ができないため、反映後に一覧から選択してください。");
-        return;
-      }
-
-      const ok = await waitForChannelReady(cid, 70, 3000);
-      if (!ok) {
-        showManualHint("解析は起動しましたが、まだ反映されていません。少し待ってから再度お試しください。");
-        return;
-      }
-
-      // index更新→描画
-      await refreshIndex();
-      showManualHint("");
-      await setChannel(cid);
-      setInputMode("select");
-    }catch(e){
-      console.error(e);
-      showManualHint(`失敗: ${e?.message || e}`);
-    }finally{
-      if (btn) btn.disabled = false;
-    }
+    showManualHint("");
+    await setChannel(id);
   });
 
-  // 初期状態
   updateYScaleButtons();
   setInputMode("select");
 
-  // indexロード
   const index = await fetchJson(`${DATA_BASE}/index.json`);
   state.index = index;
-
-  renderChannelSelect(index);
   renderChannelList(index);
+  renderChannelSelect(index);
 
-  // 先頭チャンネルへ
   const first = Array.isArray(index?.channels) ? index.channels[0] : null;
   const channelId = getChannelId(first);
   if (channelId) await setChannel(channelId);
