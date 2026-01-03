@@ -1,126 +1,280 @@
 :root{
-  --bg: #0b0e14;
-  --panel: #11151f;
-  --text: #e7ebff;
-  --muted: #9aa2c7;
-  --border: rgba(255,255,255,.08);
+  --bg:#0b0d12;
+  --text:#e7ebff;
+  --muted:#a8b0d8;
+  --border:rgba(255,255,255,.08);
+  --shadow:0 12px 30px rgba(0,0,0,.35);
+
+  --yellow:#facc15;
+  --orange:#fb923c;
+  --red:#ef4444;
 }
 
-*{
-  box-sizing: border-box;
-}
-
+*{box-sizing:border-box}
+html,body{height:100%}
 body{
-  margin: 0;
-  font-family: system-ui, -apple-system, sans-serif;
-  background: var(--bg);
-  color: var(--text);
+  margin:0;
+  background:radial-gradient(1200px 800px at 20% 0%, #151b34 0%, var(--bg) 55%);
+  color:var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
 }
 
-header{
-  padding: 16px;
+/* ===== top ===== */
+.topbar{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  padding:16px 18px;
+  border-bottom:1px solid var(--border);
+  background:linear-gradient(180deg, rgba(0,0,0,.25), rgba(0,0,0,0));
 }
 
-h1{
-  margin: 0;
-  text-align: center;
+.title{
+  display:flex;
+  justify-content:center; /* タイトル中央寄せ */
+  width:100%;
+}
+.title .h1{
+  font-size:18px;
+  font-weight:800;
+  letter-spacing:.4px;
 }
 
-h2{
-  margin: 0 0 8px 0;
-  font-size: 14px;
-  color: var(--muted);
+/* controls */
+.controls{
+  display:flex;
+  gap:12px;
+  align-items:flex-end;
+  flex-wrap:wrap;
+  justify-content:center;
 }
 
+.ctrl{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  font-size:12px;
+  color:var(--muted);
+}
+.ctrl select{
+  min-width:260px;
+  padding:10px 10px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  background:rgba(255,255,255,.04);
+  color:var(--text);
+  outline:none;
+}
+.ctrl input{
+  min-width:260px;
+  padding:10px 10px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  background:rgba(255,255,255,.04);
+  color:var(--text);
+  outline:none;
+}
+
+.manual-row{
+  display:flex;
+  gap:8px;
+  align-items:center;
+}
+.btn2{
+  padding:10px 12px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  background:rgba(255,255,255,.06);
+  color:var(--text);
+  cursor:pointer;
+  font-size:12px;
+}
+.btn2:disabled{
+  opacity:0.5;
+  cursor:not-allowed;
+}
+.hint{font-size:11px; color:var(--muted)}
+.hidden{display:none !important;}
+
+.toggle{
+  display:flex;
+  border:1px solid var(--border);
+  border-radius:12px;
+  overflow:hidden;
+  background:rgba(255,255,255,.03);
+}
+.btn{
+  padding:10px 12px;
+  border:0;
+  background:transparent;
+  color:var(--muted);
+  cursor:pointer;
+  font-size:12px;
+}
+.btn.active{
+  color:var(--text);
+  background:rgba(255,255,255,.08);
+}
+.btn:disabled{
+  opacity:0.45;
+  cursor:not-allowed;
+}
+
+/* ===== layout ===== */
 .layout{
-  display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 16px;
-  padding: 16px;
+  display:grid;
+  grid-template-columns: 1fr 420px;
+  gap:14px;
+  padding:14px;
 }
 
-.side section{
-  margin-bottom: 24px;
+.panel{
+  background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+  border:1px solid var(--border);
+  border-radius:18px;
+  box-shadow:var(--shadow);
+  overflow:hidden;
 }
 
-.main section{
-  margin-bottom: 32px;
+.plot-wrap{
+  position:relative;
+  height: calc(100vh - 190px);
+  min-height: 520px;
+}
+.plot{ position:absolute; inset:0; }
+.plot-pulse{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  pointer-events:none;
 }
 
+.note{
+  padding:10px 14px;
+  border-top:1px solid var(--border);
+  color:var(--muted);
+  font-size:12px;
+  background:rgba(0,0,0,.15);
+}
+
+.graph-desc .desc-title{
+  color:var(--text);
+  font-weight:750;
+  margin-bottom:6px;
+}
+.graph-desc .desc-body{
+  line-height:1.6;
+}
+
+/* ===== side cards ===== */
+.side{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+.card{
+  background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+  border:1px solid var(--border);
+  border-radius:18px;
+  box-shadow:var(--shadow);
+  padding:12px;
+}
+.card-title{
+  font-size:12px;
+  color:var(--muted);
+  letter-spacing:.3px;
+  margin-bottom:10px;
+}
+
+.redlist, .chlist{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  max-height:320px;
+  overflow:auto;
+  padding-right:6px;
+}
+
+/* ===== list item ===== */
 .item{
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  margin-bottom: 6px;
-  cursor: pointer;
-  color: var(--text);
-}
+  padding:10px;
+  border-radius:12px;
+  border:1px solid var(--border);
+  background:rgba(0,0,0,.18);
 
-.item a{
-  color: inherit;
-  text-decoration: none;
+  /* 非選択でも読める色に戻す */
+  color:var(--text);
 }
-
-.item .t{
-  font-size: 13px;
-}
-
+.item .t{font-size:12px; font-weight:650}
 .item .m{
-  font-size: 11px;
-  color: rgba(231,235,255,.75);
+  font-size:11px;
+  /* サブテキストを少し濃く（opacity使わない） */
+  color:rgba(231,235,255,.75);
+  margin-top:4px;
 }
+.item a{color:inherit; text-decoration:none}
+.item a:hover{text-decoration:underline}
 
-/* 状態色 */
-.item.yellow{
-  background: rgba(255,200,0,.08);
-  border-color: rgba(255,200,0,.25);
-}
-
-.item.orange{
-  background: rgba(255,140,0,.12);
-  border-color: rgba(255,140,0,.35);
-}
-
-.item.red{
-  background: rgba(255,80,80,.18);
-  border-color: rgba(255,80,80,.45);
-}
-
+/* 選択中の強調 */
 .item.active{
   background: rgba(255,255,255,.08);
   border-color: rgba(255,255,255,.18);
 }
-
 .item.active .t{
-  font-weight: 700;
+  color:var(--text);
+  font-weight:750;
 }
 
-/* グラフ */
-canvas{
-  width: 100%;
-  height: 320px;
-  background: var(--panel);
-  border-radius: 8px;
+/* バッジ */
+.badges{
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+  margin-top:6px;
+}
+.badge{
+  font-size:10px;
+  padding:2px 6px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.16);
+  background:rgba(255,255,255,.05);
+  color:var(--text);
+}
+.badge.yellow{ border-color:rgba(250,204,21,.35); }
+.badge.orange{ border-color:rgba(251,146,60,.35); }
+.badge.red{ border-color:rgba(239,68,68,.35); }
+
+/* about */
+.about{
+  font-size:12px;
+  color:var(--muted);
+  line-height:1.7;
 }
 
-/* 説明文 */
-.graph-desc{
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.6;
-}
-
-/* モバイル */
+/* ===== Mobile: 1カラムで「グラフが上、サイドは下」固定 ===== */
 @media (max-width: 900px){
+  .controls{
+    width:100%;
+    flex-direction:column;
+    align-items:stretch;
+  }
+  .ctrl select, .ctrl input{ min-width: 0; width:100%; }
+
   .layout{
-    display: flex;
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
-  .side{
-    order: 2;
+
+  /* 並び順：panel(グラフ) → RED → Channels → About */
+  .panel{ order: 1; }
+  .card-red{ order: 2; }
+  .card-ch{ order: 3; }
+  .card-about{ order: 4; }
+
+  .plot-wrap{
+    height: 70vh;
+    min-height: 420px;
   }
-  .main{
-    order: 1;
-  }
+
+  .redlist, .chlist{ max-height: 240px; }
 }
