@@ -236,7 +236,10 @@ def compute_points_and_baseline(videos, run_at):
 
     df_fit = pd.DataFrame({"days": t[fit_mask_nat], "logv": np.log10(v[fit_mask_nat])})
     model = smf.quantreg("logv ~ days", df_fit)
-    res = model.fit(q=NAT_QUANTILE)
+    res = model.fit(q=NAT_QUANTILE) 
+    # debug quantreg 自体が実行されているか
+    print("[DEBUG] quantreg executed")
+    print("[DEBUG] quantreg params:", res.params.to_dict())
 
     a_days = float(res.params["Intercept"])
     b_days = float(res.params["days"])
@@ -339,6 +342,10 @@ def compute_points_and_baseline(videos, run_at):
             "likes_mid_views_pct": 80,
         },
     }
+    #
+    print("[DEBUG] BASELINE_KEYS:", list(baseline.keys()))
+    print("[DEBUG] USING_NEW_BASELINE:", "a_days" in baseline)
+
 
     return points, baseline
 
