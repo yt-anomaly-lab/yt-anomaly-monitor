@@ -1,6 +1,6 @@
 {
   "kind": "youtube#channel",
-  "etag": "hM5acWOGiiUi3AeKPggeYvNigjc",
+  "etag": "Ct9NLOavkDJtGB1u3nkKWHMAHSE",
   "id": "UCB9cirTse_-h02qZ6ctmBzw",
   "snippet": {
     "title": "trueman_project",
@@ -34,11 +34,5 @@
       "likes": "",
       "uploads": "UUB9cirTse_-h02qZ6ctmBzw"
     }
-  },
-  "statistics": {
-    "viewCount": "1530788",
-    "subscriberCount": "44400",
-    "hiddenSubscriberCount": false,
-    "videoCount": "203"
   }
 }
