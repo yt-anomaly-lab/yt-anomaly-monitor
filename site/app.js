@@ -239,7 +239,7 @@ function logspace(xmin, xmax, n) {
   const arr = [];
   for (let i = 0; i < n; i++) {
     const t = i / (n - 1);
-    arr.push(Math.pow(10, lo + (hi - lo) * t));
+    arr.push(Math.pow( lo + (hi - lo) * t));
   }
   return arr;
 }

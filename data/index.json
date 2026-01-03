@@ -1,7 +1,12 @@
 {
-  "generated_at_utc": "2026-01-03T09:56:19.241010+00:00",
+  "generated_at_utc": "2026-01-03T09:54:15.250987+00:00",
   "watch_count": 3,
-  "warnings": [],
+  "warnings": [
+    {
+      "watch_key": "@sample_channel",
+      "error": "404 Client Error: Not Found for url: https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=UUCSO4osJZSlX-lyDftjD4jQ&maxResults=50&pageToken=&key=AIzaSyAM1dvctGj7P9f9-bF6f_tife8p58MfwNY"
+    }
+  ],
   "channels": [
     {
       "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
@@ -9,7 +14,7 @@
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 7,
-      "max_anomaly_ratio": 117.4512949387261
+      "max_anomaly_ratio": 117.47048188408782
     },
     {
       "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
@@ -17,15 +22,7 @@
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 7,
-      "max_anomaly_ratio": 117.43703706689136
-    },
-    {
-      "channel_id": "UCoDRjl0eACmDkILsV6M1OEw",
-      "watch_key": "@masaの呪物置き場",
-      "title": "masaの呪物置き場",
-      "sticky_red_count": 0,
-      "red_top_count": 0,
-      "max_anomaly_ratio": 5.36164931285257
+      "max_anomaly_ratio": 117.47048188408782
     }
   ]
 }
