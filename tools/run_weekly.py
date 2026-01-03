@@ -25,6 +25,12 @@ LIKES_GOOD_VIEWS_MIN = 100
 LIKES_MID_VIEWS_PCT = 80
 
 # ============================
+# オンデマンド自動追加の追加条件（今回確定）
+# ============================
+AUTO_WATCH_MIN_LATEST_COUNT = 50
+AUTO_WATCH_MIN_CHANNEL_AGE_DAYS = 180
+
+# ============================
 # 運用パラメータ
 # ============================
 MAX_VIDEOS = 500
@@ -88,7 +94,6 @@ def resolve_channel_id(watch_key):
     if handle.startswith("@"):
         handle = handle[1:]
 
-    # YouTube Data API: channels?forHandle=
     url = "https://www.googleapis.com/youtube/v3/channels"
     params = {
         "part": "id",
@@ -181,7 +186,6 @@ def now_utc():
 
 
 def copy_tree(src: Path, dst: Path):
-    # very small tree, so simple copy
     ensure_dir(dst)
     for path in src.rglob("*"):
         rel = path.relative_to(src)
@@ -218,7 +222,7 @@ def compute_points_and_baseline(videos, run_at):
         pub = datetime.fromisoformat(pub_s.replace("Z", "+00:00"))
 
         t_days = (run_at - pub).total_seconds() / (3600 * 24)
-        t_days = max(float(t_days), 1.0)  # clip(lower=1)
+        t_days = max(float(t_days), 1.0)
 
         viewCount = int(st.get("viewCount", 0) or 0)
         likeCount = int(st.get("likeCount", 0) or 0)
@@ -257,21 +261,17 @@ def compute_points_and_baseline(videos, run_at):
     if EXCLUDE_SHORTS and "isShort" in df.columns:
         df = df[~df["isShort"]].copy()
 
-    # log-linear NAT: log(views) ~ days  (QuantReg)
     df["logv"] = np.log(np.clip(df["views"].astype(float), 1.0, None))
 
-    # fit mask: exclude very recent days
     df_fit = df.copy()
     if RECENT_DAYS_EXCLUDE and RECENT_DAYS_EXCLUDE > 0:
         df_fit = df_fit[df_fit["days"] >= float(RECENT_DAYS_EXCLUDE)].copy()
 
-    # NAT buzz top PCT exclusion
     if not df_fit.empty and NAT_BUZZ_TOP_PCT and 0 < NAT_BUZZ_TOP_PCT < 100:
         vcut = np.percentile(df_fit["views"].astype(float), NAT_BUZZ_TOP_PCT)
         df_fit = df_fit[df_fit["views"].astype(float) <= float(vcut)].copy()
 
     if df_fit.empty:
-        # fallback: still produce points, but baseline NaN
         a_days = float("nan")
         b_days = float("nan")
     else:
@@ -280,7 +280,6 @@ def compute_points_and_baseline(videos, run_at):
         a_days = float(res.params.get("Intercept", float("nan")))
         b_days = float(res.params.get("days", float("nan")))
 
-    # expected NAT for all points
     t = df["days"].astype(float).to_numpy()
     logv_center_all = a_days + b_days * t
     v_expected = np.exp(logv_center_all)
@@ -290,7 +289,6 @@ def compute_points_and_baseline(videos, run_at):
     nat_level[(ratio_nat >= NAT_UPPER_RATIO) & (ratio_nat < NAT_BIG_RATIO)] = "△"
     nat_level[ratio_nat >= NAT_BIG_RATIO] = "RED"
 
-    # Likes x-shift: log(views) ~ log(likes)
     df2 = df.copy()
     df2 = df2[df2["likes"].astype(float) >= 1.0].copy()
     df2 = df2[df2["views"].astype(float) >= float(LIKES_GOOD_VIEWS_MIN)].copy()
@@ -310,7 +308,6 @@ def compute_points_and_baseline(videos, run_at):
         like_b0 = float(b0)
         like_b1 = float(b1)
 
-    # expected from likes for all points (if likes>=1)
     likes_all = np.clip(df["likes"].astype(float).to_numpy(), 1.0, None)
     logL_all = np.log(likes_all)
     logV_expected = like_b0 + like_b1 * logL_all
@@ -335,7 +332,6 @@ def compute_points_and_baseline(videos, run_at):
             "nat_level": str(nat_level[i]),
             "like_level": str(like_level[i]),
         }
-        # display label: prioritize nat red, then like red, then triangles
         if p["nat_level"] == "RED" or p["like_level"] == "RED":
             p["display_label"] = "RED"
         elif p["nat_level"] == "△" or p["like_level"] == "△":
@@ -343,7 +339,6 @@ def compute_points_and_baseline(videos, run_at):
         else:
             p["display_label"] = "OK"
 
-        # anomaly_ratio: for ranking, use max of ratios
         p["anomaly_ratio"] = float(max(p["ratio_nat"], p["ratio_like"]))
         points.append(p)
 
@@ -369,11 +364,6 @@ def compute_points_and_baseline(videos, run_at):
 
 
 def update_state_and_red(points, state_path: Path):
-    # state.json:
-    # {
-    #   "sticky_red": [video_id...],
-    #   "red_top": [video_id...]
-    # }
     sticky = set()
     if state_path.exists():
         try:
@@ -384,7 +374,6 @@ def update_state_and_red(points, state_path: Path):
         except Exception:
             pass
 
-    # new sticky red
     for p in points:
         if p.get("display_label") == "RED":
             sticky.add(p["video_id"])
@@ -404,9 +393,6 @@ def update_state_and_red(points, state_path: Path):
 
 
 def append_watchlist_channel_id(channel_id: str) -> bool:
-    """watchlist.txt に channel_id を追記する（既にあれば何もしない）
-    戻り値: 追記したら True
-    """
     channel_id = (channel_id or "").strip()
     if not channel_id:
         return False
@@ -422,7 +408,6 @@ def append_watchlist_channel_id(channel_id: str) -> bool:
         return False
 
     with WATCHLIST.open("a", encoding="utf-8") as f:
-        # 念のため末尾改行を保証
         txt = WATCHLIST.read_text(encoding="utf-8")
         if txt and not txt.endswith("\n"):
             f.write("\n")
@@ -441,7 +426,7 @@ def parse_args():
         "--auto_watch_red_top",
         type=int,
         default=0,
-        help="If >0, append the channel_id to watchlist.txt when red_top_count >= this threshold.",
+        help="If >0, append the channel_id to watchlist.txt when red_top_count >= this threshold AND extra guards are satisfied.",
     )
     return p.parse_args()
 
@@ -459,7 +444,6 @@ def main():
 
     watch = read_watchlist()
 
-    # on-demand channel (未監視でも解析)
     extra = (args.channel or "").strip()
     if extra:
         watch_run = [extra] + [w for w in watch if w != extra]
@@ -510,7 +494,6 @@ def main():
 
             latest = {"run_at_utc": run_at_utc, "baseline": baseline}
 
-            # history
             with (ch_dir / "runs.jsonl").open("a", encoding="utf-8") as f:
                 f.write(json.dumps(latest, ensure_ascii=False) + "\n")
 
@@ -522,13 +505,37 @@ def main():
 
             max_anom = max((p.get("anomaly_ratio", 0.0) for p in points), default=0.0)
 
-            # on-demand auto watch: red_top_count >= N なら watchlist へ追加
+            # ----------------------------
+            # on-demand auto watch（今回確定ルール）
+            #   red_top_count >= threshold
+            #   AND latest_count >= 50
+            #   AND channel_age_days >= 180
+            # ----------------------------
             if args.auto_watch_red_top and int(args.auto_watch_red_top) > 0:
                 red_top_count = len(st.get("red_top", []))
-                if red_top_count >= int(args.auto_watch_red_top):
+                latest_count = len(points)
+                channel_age_days = 0
+                if points:
+                    channel_age_days = max(p.get("days", 0) for p in points)
+
+                if (
+                    red_top_count >= int(args.auto_watch_red_top)
+                    and latest_count >= AUTO_WATCH_MIN_LATEST_COUNT
+                    and channel_age_days >= AUTO_WATCH_MIN_CHANNEL_AGE_DAYS
+                ):
                     appended = append_watchlist_channel_id(cid)
                     if appended:
-                        print(f"[ondemand] appended to watchlist: {cid} (red_top_count={red_top_count})")
+                        print(
+                            "[ondemand] appended to watchlist:",
+                            cid,
+                            f"(red_top={red_top_count}, latest={latest_count}, age_days={int(channel_age_days)})",
+                        )
+                else:
+                    print(
+                        "[ondemand] NOT appended:",
+                        cid,
+                        f"(red_top={red_top_count}, latest={latest_count}, age_days={int(channel_age_days)})",
+                    )
 
             channels_index.append(
                 {
