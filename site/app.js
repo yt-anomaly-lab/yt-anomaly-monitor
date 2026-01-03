@@ -259,11 +259,12 @@ function buildBaselineTraces(mode, rows, baseline) {
     const tmax = Math.max(...daysArr, 1);
     const t_line = linspace(1, tmax, N);
 
-    const log_center = t_line.map(t => a + b * t);
-    const log_upper  = log_center.map(lv => lv + Math.log10(NAT_UP)); // ★log空間で +log10 :contentReference[oaicite:15]{index=15}
+    const log_center = t_line.map(t => a + b * t);          // ln(V)
+    const log_upper  = log_center.map(lv => lv + Math.log(NAT_UP)); // lnで +ln
 
-    const v_center = log_center.map(lv => Math.pow(10, lv));
-    const v_upper  = log_upper.map(lv => Math.pow(10, lv));
+    const v_center = log_center.map(lv => Math.exp(lv));
+    const v_upper  = log_upper.map(lv => Math.exp(lv));
+
 
     return [
       { type:"scatter", mode:"lines", name:"expected", x:t_line, y:v_center, hoverinfo:"skip", line:{ width:2, dash:"solid" } },
@@ -283,11 +284,12 @@ function buildBaselineTraces(mode, rows, baseline) {
   const lmax = Math.max(...likesArr);
 
   // make_plots: x_line2 = linspace(logL.min, logL.max), y_line2=b0+b1*x_line2
-  const logL_line = linspace(Math.log10(lmin), Math.log10(lmax), 300);
-  const logV_line = logL_line.map(x => b0 + b1 * x);
+  const logL_line = linspace(Math.log(lmin), Math.log(lmax), 300); // ln(L)
+  const logV_line = logL_line.map(x => b0 + b1 * x);               // ln(V)
 
-  const views_line = logV_line.map(lv => Math.pow(10, lv)); // x=views
-  const likes_line = logL_line.map(ll => Math.pow(10, ll)); // y=likes
+  const views_line = logV_line.map(lv => Math.exp(lv));
+  const likes_line = logL_line.map(ll => Math.exp(ll));
+
 
   const traces = [
     { type:"scatter", mode:"lines", name:"expected", x:views_line, y:likes_line, hoverinfo:"skip", line:{ width:2, dash:"solid" } },
