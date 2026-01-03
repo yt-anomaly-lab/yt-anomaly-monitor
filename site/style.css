@@ -179,6 +179,20 @@ body{
 .item .m{font-size:11px; color:var(--muted); margin-top:4px}
 .item a{color:inherit; text-decoration:none}
 .item a:hover{text-decoration:underline}
+/* 非選択でも読めるようにする */
+.item{
+  color: var(--text);
+}
+
+/* 選択中（JSで class=active を付けている前提）をさらに強調 */
+.item.active{
+  background: rgba(255,255,255,.08);
+  border-color: rgba(255,255,255,.18);
+}
+.item.active .t{
+  color: var(--text);
+  font-weight: 750;
+}
 
 .about{
   font-size:12px;
