@@ -14,6 +14,7 @@ const LABEL_COLOR = {
 };
 
 const $ = (sel) => document.querySelector(sel);
+const ONDEMAND_ENDPOINT = "https://yt-ondemand.araki-69c.workers.dev/ondemand";
 
 const state = {
   index: null,
