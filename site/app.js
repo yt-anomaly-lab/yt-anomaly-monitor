@@ -2,12 +2,12 @@
 
 const DATA_BASE = "./data";
 
-/* ===== 調整パラメータ（あなたの要望） ===== */
-const PULSE_SPEED = 0.65;     // ドクドク速度（小さいほど遅い）
-const UPPER_MULT  = 1.00;     // 上限倍率に掛ける追加係数（データ側 * これ）
+/* ===== 調整パラメータ ===== */
+const PULSE_SPEED = 0.65;     // ドクドク速度
+const UPPER_MULT  = 1.00;     // 上限倍率
 
 const LABEL_COLOR = {
-  NORMAL: "#3b82f6",
+  NORMAL: "#94a3b8",
   YELLOW: "#facc15",
   ORANGE: "#fb923c",
   RED: "#ef4444",
@@ -20,8 +20,8 @@ const ONDEMAND_ENDPOINT = "https://yt-ondemand.araki-69c.workers.dev/ondemand";
 
 /* ポーリング設定（Pages反映待ち） */
 const POLL_INTERVAL_MS = 3000;
-const POLL_TRIES_INDEX = 60;   // index.json 待ち（最大 ~3分）
-const POLL_TRIES_DATA  = 60;   // channel data 待ち（最大 ~3分）
+const POLL_TRIES_INDEX = 60;
+const POLL_TRIES_DATA  = 60;
 
 const state = {
   index: null,
@@ -35,6 +35,8 @@ const state = {
   pulseRunning: false,
   pulseT: 0,
   plotEventsAttached: false,
+
+  activeChannelItem: null,
 };
 
 function safeNum(v, dflt = 0) {
@@ -88,15 +90,35 @@ function normalizePoints(pointsJson) {
 }
 function getVideoId(p) { return p?.videoId || p?.video_id || p?.id || ""; }
 function getTitle(p) { return p?.title || "(no title)"; }
-function getDays(p) { return safeNum(p?.t_days, safeNum(p?.days, NaN)); } // t_days を優先（make_plots）
+function getDays(p) { return safeNum(p?.t_days, safeNum(p?.days, NaN)); }
 function getViews(p) { return safeNum(p?.viewCount, safeNum(p?.views, NaN)); }
 function getLikes(p) { return safeNum(p?.likeCount, safeNum(p?.likes, NaN)); }
-function getLabel(p) { return String(pick(p, ["display_label", "observed_label", "label"]) ?? "NORMAL").toUpperCase(); }
 function getAnomalyRatio(p) { return safeNum(p?.anomaly_ratio, NaN); }
 function getRatioNat(p) { return safeNum(p?.ratio_nat, NaN); }
 function getRatioLike(p) { return safeNum(p?.ratio_like, NaN); }
 
-/* ---------- 入力モード（既存UIを維持） ---------- */
+/* ★期待線超え判定で色を再計算
+   - どちらか超え → 黄
+   - ただし anomaly_ratio >= 10 ならオレンジ
+   - 両方超え → 赤
+*/
+function classifyByExpected(p) {
+  const rn = getRatioNat(p);
+  const rl = getRatioLike(p);
+  const ar = getAnomalyRatio(p);
+
+  const exNat = Number.isFinite(rn) ? (rn > 1.0) : false;
+  const exLik = Number.isFinite(rl) ? (rl > 1.0) : false;
+
+  if (exNat && exLik) return "RED";
+  if (exNat || exLik) {
+    if (Number.isFinite(ar) && ar >= 10.0) return "ORANGE";
+    return "YELLOW";
+  }
+  return "NORMAL";
+}
+
+/* ---------- 入力モード ---------- */
 function setInputMode(mode) {
   state.inputMode = mode;
   $("#btnInputSelect")?.classList.toggle("active", mode === "select");
@@ -134,35 +156,22 @@ function findChannelIdByManualInput(raw) {
 async function startOndemand(rawInput) {
   const payload = { channel: normalizeManual(rawInput) };
 
-  // 診断ログ
   console.log("[ondemand] endpoint:", ONDEMAND_ENDPOINT);
   console.log("[ondemand] payload:", payload);
 
-  try {
-    // まずは到達性チェック（GETでCORS許可がないとここで落ちる）
-    // ※ WorkerがGETを許可しないならコメントアウトでOK
-    // await fetch(ONDEMAND_ENDPOINT, { method: "GET", cache: "no-store" });
+  const r = await fetch(ONDEMAND_ENDPOINT, {
+    method: "POST",
+    mode: "cors",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 
-    const r = await fetch(ONDEMAND_ENDPOINT, {
-      method: "POST",
-      mode: "cors",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+  const text = await r.text().catch(() => "");
+  console.log("[ondemand] status:", r.status);
+  console.log("[ondemand] body:", text);
 
-    console.log("[ondemand] status:", r.status);
-    const text = await r.text().catch(() => "");
-    console.log("[ondemand] body:", text);
-
-    if (!r.ok) throw new Error(`ondemand http ${r.status}: ${text}`);
-
-    try { return JSON.parse(text); }
-    catch { return {}; }
-  } catch (e) {
-    // ここに来ると「ネットワーク層」エラー（CORS/到達性/ブロック）
-    console.error("[ondemand] fetch error:", e);
-    throw e;
-  }
+  if (!r.ok) throw new Error(`ondemand http ${r.status}: ${text}`);
+  try { return JSON.parse(text); } catch { return {}; }
 }
 
 async function refreshIndex() {
@@ -182,11 +191,9 @@ async function waitChannelIdFromIndex(rawInput) {
     const idx = await refreshIndex().catch(() => null);
     const arr = Array.isArray(idx?.channels) ? idx.channels : [];
 
-    // 1) 直接一致できるならそれを使う
     const id1 = findChannelIdByManualInput(input);
     if (id1) return id1;
 
-    // 2) それでも無理なら、handleの「@なし一致」も拾う
     const key2 = lower.startsWith("@") ? lower.slice(1) : lower;
     const hit = arr.find(ch => {
       const h = String(ch?.handle || "").toLowerCase().replace(/^@/, "");
@@ -213,47 +220,87 @@ async function waitChannelDataReady(channelId) {
   return false;
 }
 
-/* ---------- UI ---------- */
+/* ---------- UI（Channels一覧） ---------- */
+function setActiveChannelItem(el) {
+  if (state.activeChannelItem) state.activeChannelItem.classList.remove("active");
+  state.activeChannelItem = el;
+  if (state.activeChannelItem) state.activeChannelItem.classList.add("active");
+}
+
+/* ★Channels（異常度ワースト順）:
+   - sticky_red_count > 0 のみ表示
+   - worst 降順
+*/
 function renderChannelList(index) {
   const root = $("#channelList");
   if (!root) return;
   root.innerHTML = "";
-  const arr = Array.isArray(index?.channels) ? index.channels : [];
-  arr.slice(0, 60).forEach((ch) => {
+
+  const arr0 = Array.isArray(index?.channels) ? index.channels : [];
+  const arr = arr0
+    .filter(ch => getStickyCount(ch) > 0)
+    .slice();
+
+  arr.sort((a,b) => {
+    const wa = getWorstAnomaly(a);
+    const wb = getWorstAnomaly(b);
+    const aa = Number.isFinite(wa) ? wa : -Infinity;
+    const bb = Number.isFinite(wb) ? wb : -Infinity;
+    return bb - aa;
+  });
+
+  if (!arr.length) {
+    root.innerHTML = `<div class="item"><div class="m">対象なし（sticky_red_count > 0 のみ表示）</div></div>`;
+    return;
+  }
+
+  arr.slice(0, 80).forEach((ch) => {
     const div = document.createElement("div");
     div.className = "item";
+
+    const id = getChannelId(ch);
     const title = getChannelTitle(ch);
     const worst = getWorstAnomaly(ch);
     const sticky = getStickyCount(ch);
+
     div.innerHTML = `
       <div class="t">${escapeHtml(title)}</div>
       <div class="m">worst: ${Number.isFinite(worst) ? worst.toFixed(2) : "?"} / sticky_red: ${sticky}</div>
     `;
+
     div.addEventListener("click", () => {
-      const id = getChannelId(ch);
-      if (id) setChannel(id);
+      if (!id) return;
+      setActiveChannelItem(div);
+      setChannel(id).catch(console.error);
     });
+
+    if (id && id === state.currentChannelId) setActiveChannelItem(div);
+
     root.appendChild(div);
   });
 }
 
+/* select は全件（表示できる全チャンネル） */
 function renderChannelSelect(index) {
   const sel = $("#channelSelect");
   if (!sel) return;
   sel.innerHTML = "";
   const arr = Array.isArray(index?.channels) ? index.channels : [];
+
   arr.forEach((ch) => {
     const opt = document.createElement("option");
     opt.value = getChannelId(ch);
     opt.textContent = `${getChannelTitle(ch)} (sticky_red=${getStickyCount(ch)})`;
     sel.appendChild(opt);
   });
+
   sel.addEventListener("change", () => {
     const id = sel.value;
-    if (id) setChannel(id);
+    if (id) setChannel(id).catch(console.error);
   });
 }
 
+/* ---------- mode / yscale ---------- */
 function updateYScaleButtons() {
   const btnLog = $("#btnYLog");
   const btnLin = $("#btnYLin");
@@ -272,7 +319,7 @@ function setMode(mode) {
   updateYScaleButtons();
   if (state.currentChannelId) {
     const cached = state.channelCache.get(state.currentChannelId);
-    if (cached) drawPlot(cached);
+    if (cached) drawPlot(cached).catch(console.error);
   }
 }
 
@@ -282,7 +329,7 @@ function setYLog(on) {
   if (state.mode !== "views_days") return;
   if (state.currentChannelId) {
     const cached = state.channelCache.get(state.currentChannelId);
-    if (cached) drawPlot(cached);
+    if (cached) drawPlot(cached).catch(console.error);
   }
 }
 
@@ -313,8 +360,12 @@ async function setChannel(channelId) {
   renderBaselineInfo(bundle);
   await drawPlot(bundle);
   renderRedList(bundle);
+
+  // 一覧のactive反映
+  if (state.index) renderChannelList(state.index);
 }
 
+/* ---------- baseline info ---------- */
 function renderBaselineInfo(bundle) {
   const b = bundle?.latest?.baseline || {};
   const title = bundle?.channel?.title || state.currentChannelId || "(unknown)";
@@ -331,22 +382,12 @@ function renderBaselineInfo(bundle) {
     ` / pulse=${PULSE_SPEED.toFixed(2)}`;
 }
 
-/* ---------- baseline lines（make_plots 完全一致） ---------- */
+/* ---------- baseline lines（既存維持） ---------- */
 function linspace(xmin, xmax, n) {
   if (n <= 1) return [xmin];
   const arr = [];
   const step = (xmax - xmin) / (n - 1);
   for (let i = 0; i < n; i++) arr.push(xmin + step * i);
-  return arr;
-}
-function logspace(xmin, xmax, n) {
-  const lo = Math.log10(xmin);
-  const hi = Math.log10(xmax);
-  const arr = [];
-  for (let i = 0; i < n; i++) {
-    const t = i / (n - 1);
-    arr.push(Math.pow(lo + (hi - lo) * t));
-  }
   return arr;
 }
 
@@ -364,8 +405,8 @@ function buildBaselineTraces(mode, rows, baseline) {
     const tmax = Math.max(...daysArr, 1);
     const t_line = linspace(1, tmax, N);
 
-    const log_center = t_line.map(t => a + b * t);                 // ln(V)
-    const log_upper  = log_center.map(lv => lv + Math.log(NAT_UP)); // lnで +ln
+    const log_center = t_line.map(t => a + b * t);
+    const log_upper  = log_center.map(lv => lv + Math.log(NAT_UP));
 
     const v_center = log_center.map(lv => Math.exp(lv));
     const v_upper  = log_upper.map(lv => Math.exp(lv));
@@ -386,8 +427,8 @@ function buildBaselineTraces(mode, rows, baseline) {
   const lmin = Math.min(...likesArr);
   const lmax = Math.max(...likesArr);
 
-  const logL_line = linspace(Math.log(lmin), Math.log(lmax), 300); // ln(L)
-  const logV_line = logL_line.map(x => b0 + b1 * x);               // ln(V)
+  const logL_line = linspace(Math.log(lmin), Math.log(lmax), 300);
+  const logV_line = logL_line.map(x => b0 + b1 * x);
 
   const views_line = logV_line.map(lv => Math.exp(lv));
   const likes_line = logL_line.map(ll => Math.exp(ll));
@@ -406,13 +447,12 @@ function buildBaselineTraces(mode, rows, baseline) {
   return traces;
 }
 
-/* ---------- pulse overlay（現状維持） ---------- */
+/* ---------- pulse overlay（赤のみ：期待線超え両方） ---------- */
 function computeRedPlotPoints(rows, mode) {
   const red = [];
   for (const p of rows) {
-    const label = getLabel(p);
-    const isRed = (label === "RED") || (p?.sticky_red === true);
-    if (!isRed) continue;
+    const label = classifyByExpected(p);
+    if (label !== "RED") continue;
 
     const v = getViews(p);
     const l = getLikes(p);
@@ -423,7 +463,7 @@ function computeRedPlotPoints(rows, mode) {
     if (!(x >= 0 && y > 0)) continue;
 
     const ar = getAnomalyRatio(p);
-    const strength = Math.max(0.15, Math.min(1.0, Math.log10(ar + 1) / 2.0));
+    const strength = Math.max(0.15, Math.min(1.0, Math.log10((Number.isFinite(ar) ? ar : 0) + 1) / 2.0));
     red.push({ x, y, strength });
   }
   return red;
@@ -564,22 +604,24 @@ async function drawPlot(bundle) {
     const d = getDays(p);
     const v = getViews(p);
     const l = getLikes(p);
-    const label = getLabel(p);
-    const ar = getAnomalyRatio(p);
+
     const rn = getRatioNat(p);
     const rl = getRatioLike(p);
+    const ar = getAnomalyRatio(p);
 
     let x, y;
     if (state.mode === "views_days") { x = d; y = v; } else { x = v; y = l; }
 
+    const label = classifyByExpected(p);
+
     xs.push(x);
     ys.push(y);
-    colors.push(LABEL_COLOR[label] || "#94a3b8");
-    sizes.push(label === "RED" ? 9 : (label === "ORANGE" ? 7 : 6));
+    colors.push(LABEL_COLOR[label] || LABEL_COLOR.NORMAL);
+    sizes.push(label === "RED" ? 9 : (label === "ORANGE" ? 8 : (label === "YELLOW" ? 8 : 6)));
 
     hover.push([
       `<b>${escapeHtml(title)}</b>`,
-      `label: <b>${escapeHtml(label)}</b>`,
+      `判定: <b>${escapeHtml(label)}</b>`,
       `days: ${Number.isFinite(d) ? d.toFixed(2) : "?"}`,
       `views: ${Number.isFinite(v) ? fmtInt(v) : "?"}`,
       `likes: ${Number.isFinite(l) ? fmtInt(l) : "?"}`,
@@ -632,7 +674,7 @@ async function drawPlot(bundle) {
   renderBaselineInfo(bundle);
 }
 
-/* ---------- RED list ---------- */
+/* ---------- 異常値上位（既存仕様：state.jsonのred_topを表示） ---------- */
 function normalizeRedTop(st) {
   const raw = Array.isArray(st?.red_top) ? st.red_top : Array.isArray(st?.redTop) ? st.redTop : [];
   return raw.map((it) => (typeof it === "string" ? { video_id: it } : it)).filter(Boolean);
@@ -702,7 +744,7 @@ async function boot() {
     try {
       if (btn) btn.disabled = true;
 
-      // まず「既に監視されているなら即表示」
+      // 既にindexにいるなら即表示
       const already = findChannelIdByManualInput(input);
       if (already) {
         showManualHint("");
@@ -719,7 +761,7 @@ async function boot() {
         (res && (res.channel_id || res.channelId || res.id)) ||
         (input.startsWith("UC") ? input : null);
 
-      // @handle 等でID不明な場合は index.json 反映を待って解決
+      // @handle 等でID不明なら index.json 更新を待って解決
       if (!channelId) {
         showManualHint("解析中…（index更新待ち）");
         channelId = await waitChannelIdFromIndex(input);
@@ -730,7 +772,7 @@ async function boot() {
         return;
       }
 
-      // 生成物（latest_points.json）反映待ち
+      // latest_points.json の反映待ち
       showManualHint("解析中…（データ生成待ち）");
       const ok = await waitChannelDataReady(channelId);
       if (!ok) {
