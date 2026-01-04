@@ -1,0 +1,39 @@
+{
+  "kind": "youtube#channel",
+  "etag": "5d9CZjntWj9oE9GcqbDN8mU4vxE",
+  "id": "UCxi_lDMoGBFzM4vyZv7yRUQ",
+  "snippet": {
+    "title": "西脇亨輔チャンネル",
+    "description": "元テレビ朝日法務部長・弁護士の西脇亨輔が、誤魔化されそうなこと、何だかおかしいことを皆さんに訴えかけるチャンネルです。\n忘れてはいけないことは、きっと、たくさんあります。",
+    "customUrl": "@nishiwakikyosuke",
+    "publishedAt": "2024-04-29T17:44:06.756977Z",
+    "thumbnails": {
+      "default": {
+        "url": "https://yt3.ggpht.com/CCbIGl9sjD-bUWY4-8INQ2PlnGuWE6-VHSykjivtfGWKDURjLzVGhTAxIB4qVm8qj89RWIPLXw=s88-c-k-c0x00ffffff-no-rj",
+        "width": 88,
+        "height": 88
+      },
+      "medium": {
+        "url": "https://yt3.ggpht.com/CCbIGl9sjD-bUWY4-8INQ2PlnGuWE6-VHSykjivtfGWKDURjLzVGhTAxIB4qVm8qj89RWIPLXw=s240-c-k-c0x00ffffff-no-rj",
+        "width": 240,
+        "height": 240
+      },
+      "high": {
+        "url": "https://yt3.ggpht.com/CCbIGl9sjD-bUWY4-8INQ2PlnGuWE6-VHSykjivtfGWKDURjLzVGhTAxIB4qVm8qj89RWIPLXw=s800-c-k-c0x00ffffff-no-rj",
+        "width": 800,
+        "height": 800
+      }
+    },
+    "localized": {
+      "title": "西脇亨輔チャンネル",
+      "description": "元テレビ朝日法務部長・弁護士の西脇亨輔が、誤魔化されそうなこと、何だかおかしいことを皆さんに訴えかけるチャンネルです。\n忘れてはいけないことは、きっと、たくさんあります。"
+    },
+    "country": "JP"
+  },
+  "contentDetails": {
+    "relatedPlaylists": {
+      "likes": "",
+      "uploads": "UUxi_lDMoGBFzM4vyZv7yRUQ"
+    }
+  }
+}
