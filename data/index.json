@@ -1,15 +1,20 @@
 {
-  "generated_at_utc": "2026-01-04T15:18:21.834925+00:00",
+  "generated_at_utc": "2026-01-04T16:13:09.156123+00:00",
   "watch_count": 3,
-  "warnings": [],
+  "warnings": [
+    {
+      "watch_key": "@nobuyuki_mizutani?si=x4kommc9pBdr2AcF",
+      "error": "handle not found: @nobuyuki_mizutani?si=x4kommc9pBdr2AcF"
+    }
+  ],
   "channels": [
     {
-      "channel_id": "UCEXeI2nyfQTHAsATp0NjGbQ",
-      "watch_key": "@donmatz1959",
-      "title": "ドンマッツの反カルト思考チャンネル",
-      "sticky_red_count": 1,
-      "red_top_count": 1,
-      "max_anomaly_ratio": 156.42103538941504
+      "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
+      "watch_key": "UCB9cirTse_-h02qZ6ctmBzw",
+      "title": "trueman_project",
+      "sticky_red_count": 8,
+      "red_top_count": 7,
+      "max_anomaly_ratio": 130.1879300401642
     },
     {
       "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
@@ -17,15 +22,7 @@
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 7,
-      "max_anomaly_ratio": 129.4213466679349
-    },
-    {
-      "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
-      "watch_key": "UCB9cirTse_-h02qZ6ctmBzw",
-      "title": "trueman_project",
-      "sticky_red_count": 8,
-      "red_top_count": 7,
-      "max_anomaly_ratio": 129.4213466679349
+      "max_anomaly_ratio": 130.18788968509094
     }
   ]
 }
