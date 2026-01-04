@@ -761,7 +761,7 @@ async function boot() {
       await refreshIndex().catch(() => {});
       showManualHint("");
       await setChannel(channelId);
-      setInputMode("select");
+      setInputMode("manual");
     } catch (e) {
       console.error(e);
       showManualHint(`失敗: ${e?.message || e}`);
@@ -771,7 +771,7 @@ async function boot() {
   });
 
   updateYScaleButtons();
-  setInputMode("select");
+  setInputMode("manual");
 
   const index = await fetchJson(`${DATA_BASE}/index.json`);
   state.index = index;
