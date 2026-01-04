@@ -133,16 +133,36 @@ function findChannelIdByManualInput(raw) {
 /* ---------- オンデマンド実行 ---------- */
 async function startOndemand(rawInput) {
   const payload = { channel: normalizeManual(rawInput) };
-  const r = await fetch(ONDEMAND_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!r.ok) {
-    const t = await r.text().catch(() => "");
-    throw new Error(`ondemand failed (${r.status}) ${t}`);
+
+  // 診断ログ
+  console.log("[ondemand] endpoint:", ONDEMAND_ENDPOINT);
+  console.log("[ondemand] payload:", payload);
+
+  try {
+    // まずは到達性チェック（GETでCORS許可がないとここで落ちる）
+    // ※ WorkerがGETを許可しないならコメントアウトでOK
+    // await fetch(ONDEMAND_ENDPOINT, { method: "GET", cache: "no-store" });
+
+    const r = await fetch(ONDEMAND_ENDPOINT, {
+      method: "POST",
+      mode: "cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    console.log("[ondemand] status:", r.status);
+    const text = await r.text().catch(() => "");
+    console.log("[ondemand] body:", text);
+
+    if (!r.ok) throw new Error(`ondemand http ${r.status}: ${text}`);
+
+    try { return JSON.parse(text); }
+    catch { return {}; }
+  } catch (e) {
+    // ここに来ると「ネットワーク層」エラー（CORS/到達性/ブロック）
+    console.error("[ondemand] fetch error:", e);
+    throw e;
   }
-  return await r.json().catch(() => ({}));
 }
 
 async function refreshIndex() {
