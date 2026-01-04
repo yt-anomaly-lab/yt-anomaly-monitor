@@ -3,8 +3,8 @@
 const DATA_BASE = "./data";
 
 /* ===== 調整パラメータ ===== */
-const PULSE_SPEED = 0.65;     // ドクドク速度
-const UPPER_MULT  = 1.00;     // 上限倍率
+const PULSE_SPEED = 0.65;
+const UPPER_MULT  = 1.00;
 
 const LABEL_COLOR = {
   NORMAL: "#94a3b8",
@@ -15,10 +15,8 @@ const LABEL_COLOR = {
 
 const $ = (sel) => document.querySelector(sel);
 
-/* Cloudflare Workers（yt-ondemand） */
 const ONDEMAND_ENDPOINT = "https://yt-ondemand.araki-69c.workers.dev/ondemand";
 
-/* ポーリング設定（Pages反映待ち） */
 const POLL_INTERVAL_MS = 3000;
 const POLL_TRIES_INDEX = 60;
 const POLL_TRIES_DATA  = 60;
@@ -75,13 +73,11 @@ function pick(obj, keys) {
   return undefined;
 }
 
-/* ---------- index.json 互換 ---------- */
 function getChannelId(ch) { return ch?.channel_id || ch?.channelId || ch?.id || ""; }
 function getChannelTitle(ch) { return ch?.title || ch?.handle || ch?.watch_key || ch?.watchKey || getChannelId(ch) || "(unknown)"; }
 function getStickyCount(ch) { return safeNum(ch?.sticky_red_count, safeNum(ch?.sticky_red, safeNum(ch?.sticky, 0))); }
 function getWorstAnomaly(ch) { return safeNum(ch?.max_anomaly_ratio, safeNum(ch?.worst_anomaly, safeNum(ch?.worst, NaN))); }
 
-/* ---------- latest_points.json（run_weekly 形式） ---------- */
 function normalizePoints(pointsJson) {
   if (Array.isArray(pointsJson)) return pointsJson;
   if (pointsJson && Array.isArray(pointsJson.points)) return pointsJson.points;
@@ -97,11 +93,6 @@ function getAnomalyRatio(p) { return safeNum(p?.anomaly_ratio, NaN); }
 function getRatioNat(p) { return safeNum(p?.ratio_nat, NaN); }
 function getRatioLike(p) { return safeNum(p?.ratio_like, NaN); }
 
-/* ★期待線超え判定で色を再計算
-   - どちらか超え → 黄
-   - ただし anomaly_ratio >= 10 ならオレンジ
-   - 両方超え → 赤
-*/
 function classifyByExpected(p) {
   const rn = getRatioNat(p);
   const rl = getRatioLike(p);
@@ -118,7 +109,6 @@ function classifyByExpected(p) {
   return "NORMAL";
 }
 
-/* ---------- 入力モード ---------- */
 function setInputMode(mode) {
   state.inputMode = mode;
   $("#btnInputSelect")?.classList.toggle("active", mode === "select");
@@ -135,7 +125,6 @@ function normalizeManual(raw) {
   return String(raw || "").trim();
 }
 
-/* 既知のindex内から手入力を解決（UC / @handle / watch_key / title 部分一致） */
 function findChannelIdByManualInput(raw) {
   const s = normalizeManual(raw);
   if (!s) return null;
@@ -152,12 +141,8 @@ function findChannelIdByManualInput(raw) {
   return hit ? getChannelId(hit) : null;
 }
 
-/* ---------- オンデマンド実行 ---------- */
 async function startOndemand(rawInput) {
   const payload = { channel: normalizeManual(rawInput) };
-
-  console.log("[ondemand] endpoint:", ONDEMAND_ENDPOINT);
-  console.log("[ondemand] payload:", payload);
 
   const r = await fetch(ONDEMAND_ENDPOINT, {
     method: "POST",
@@ -167,9 +152,6 @@ async function startOndemand(rawInput) {
   });
 
   const text = await r.text().catch(() => "");
-  console.log("[ondemand] status:", r.status);
-  console.log("[ondemand] body:", text);
-
   if (!r.ok) throw new Error(`ondemand http ${r.status}: ${text}`);
   try { return JSON.parse(text); } catch { return {}; }
 }
@@ -182,7 +164,6 @@ async function refreshIndex() {
   return index;
 }
 
-/* index.json に入力が現れるのを待つ（@handle の場合に必要） */
 async function waitChannelIdFromIndex(rawInput) {
   const input = normalizeManual(rawInput);
   const lower = input.toLowerCase();
@@ -207,7 +188,6 @@ async function waitChannelIdFromIndex(rawInput) {
   return null;
 }
 
-/* channelの生成物（latest_points.json）が来るまで待つ */
 async function waitChannelDataReady(channelId) {
   const base = `${DATA_BASE}/channels/${channelId}`;
   const probe = `${base}/latest_points.json`;
@@ -220,26 +200,19 @@ async function waitChannelDataReady(channelId) {
   return false;
 }
 
-/* ---------- UI（Channels一覧） ---------- */
 function setActiveChannelItem(el) {
   if (state.activeChannelItem) state.activeChannelItem.classList.remove("active");
   state.activeChannelItem = el;
   if (state.activeChannelItem) state.activeChannelItem.classList.add("active");
 }
 
-/* ★Channels（異常度ワースト順）:
-   - sticky_red_count > 0 のみ表示
-   - worst 降順
-*/
 function renderChannelList(index) {
   const root = $("#channelList");
   if (!root) return;
   root.innerHTML = "";
 
   const arr0 = Array.isArray(index?.channels) ? index.channels : [];
-  const arr = arr0
-    .filter(ch => getStickyCount(ch) > 0)
-    .slice();
+  const arr = arr0.filter(ch => getStickyCount(ch) > 0).slice(); // sticky_red無しは出さない
 
   arr.sort((a,b) => {
     const wa = getWorstAnomaly(a);
@@ -275,12 +248,10 @@ function renderChannelList(index) {
     });
 
     if (id && id === state.currentChannelId) setActiveChannelItem(div);
-
     root.appendChild(div);
   });
 }
 
-/* select は全件（表示できる全チャンネル） */
 function renderChannelSelect(index) {
   const sel = $("#channelSelect");
   if (!sel) return;
@@ -300,7 +271,6 @@ function renderChannelSelect(index) {
   });
 }
 
-/* ---------- mode / yscale ---------- */
 function updateYScaleButtons() {
   const btnLog = $("#btnYLog");
   const btnLin = $("#btnYLin");
@@ -333,7 +303,6 @@ function setYLog(on) {
   }
 }
 
-/* ---------- load ---------- */
 async function loadChannelBundle(channelId) {
   if (state.channelCache.has(channelId)) return state.channelCache.get(channelId);
 
@@ -361,11 +330,9 @@ async function setChannel(channelId) {
   await drawPlot(bundle);
   renderRedList(bundle);
 
-  // 一覧のactive反映
   if (state.index) renderChannelList(state.index);
 }
 
-/* ---------- baseline info ---------- */
 function renderBaselineInfo(bundle) {
   const b = bundle?.latest?.baseline || {};
   const title = bundle?.channel?.title || state.currentChannelId || "(unknown)";
@@ -382,7 +349,6 @@ function renderBaselineInfo(bundle) {
     ` / pulse=${PULSE_SPEED.toFixed(2)}`;
 }
 
-/* ---------- baseline lines（既存維持） ---------- */
 function linspace(xmin, xmax, n) {
   if (n <= 1) return [xmin];
   const arr = [];
@@ -447,7 +413,6 @@ function buildBaselineTraces(mode, rows, baseline) {
   return traces;
 }
 
-/* ---------- pulse overlay（赤のみ：期待線超え両方） ---------- */
 function computeRedPlotPoints(rows, mode) {
   const red = [];
   for (const p of rows) {
@@ -578,7 +543,6 @@ function attachPlotEventsOnce() {
   window.addEventListener("resize", () => syncPulseCanvasToPlot());
 }
 
-/* ---------- main plot ---------- */
 async function drawPlot(bundle) {
   const points = Array.isArray(bundle?.points) ? bundle.points : [];
   const baseline = bundle?.latest?.baseline || {};
@@ -674,7 +638,6 @@ async function drawPlot(bundle) {
   renderBaselineInfo(bundle);
 }
 
-/* ---------- 異常値上位（既存仕様：state.jsonのred_topを表示） ---------- */
 function normalizeRedTop(st) {
   const raw = Array.isArray(st?.red_top) ? st.red_top : Array.isArray(st?.redTop) ? st.redTop : [];
   return raw.map((it) => (typeof it === "string" ? { video_id: it } : it)).filter(Boolean);
@@ -722,7 +685,6 @@ function renderRedList(bundle) {
   }
 }
 
-/* ---------- boot ---------- */
 async function boot() {
   $("#btnViewsDays")?.addEventListener("click", () => setMode("views_days"));
   $("#btnViewsLikes")?.addEventListener("click", () => setMode("views_likes"));
@@ -744,7 +706,6 @@ async function boot() {
     try {
       if (btn) btn.disabled = true;
 
-      // 既にindexにいるなら即表示
       const already = findChannelIdByManualInput(input);
       if (already) {
         showManualHint("");
@@ -752,16 +713,13 @@ async function boot() {
         return;
       }
 
-      // オンデマンド起動
       showManualHint("解析中…（オンデマンド起動 → Pages反映待ち）");
       const res = await startOndemand(input);
 
-      // Workerが channel_id を返す場合はそれを優先
       let channelId =
         (res && (res.channel_id || res.channelId || res.id)) ||
         (input.startsWith("UC") ? input : null);
 
-      // @handle 等でID不明なら index.json 更新を待って解決
       if (!channelId) {
         showManualHint("解析中…（index更新待ち）");
         channelId = await waitChannelIdFromIndex(input);
@@ -772,7 +730,6 @@ async function boot() {
         return;
       }
 
-      // latest_points.json の反映待ち
       showManualHint("解析中…（データ生成待ち）");
       const ok = await waitChannelDataReady(channelId);
       if (!ok) {
@@ -780,7 +737,6 @@ async function boot() {
         return;
       }
 
-      // index更新→表示
       await refreshIndex().catch(() => {});
       showManualHint("");
       await setChannel(channelId);
