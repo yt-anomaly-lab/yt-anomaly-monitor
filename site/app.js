@@ -24,7 +24,7 @@ const state = {
   index: null,
   currentChannelId: null,
   mode: "views_days",
-  yLog: false,
+  yLog: true,
   inputMode: "select",
   channelCache: new Map(),
 
@@ -92,7 +92,7 @@ function getAnomalyRatio(p) { return safeNum(p?.anomaly_ratio, NaN); }
 function getRatioNat(p) { return safeNum(p?.ratio_nat, NaN); }
 function getRatioLike(p) { return safeNum(p?.ratio_like, NaN); }
 
-/* ===== 上限線(upper)超え判定 ===== */
+/* 上限線判定（前提：baselineがln/exp） */
 function upperViewsForDays(days, baseline) {
   const a = safeNum(baseline?.a_days, NaN);
   const b = safeNum(baseline?.b_days, NaN);
@@ -130,8 +130,8 @@ function classifyByUpper(p, baseline) {
   const upV_days  = upperViewsForDays(d, baseline);
   const upV_likes = upperViewsForLikes(l, baseline);
 
-  const exDays  = Number.isFinite(upV_days)  ? (v > upV_days)  : false;
-  const exLikes = Number.isFinite(upV_likes) ? (v > upV_likes) : false;
+  const exDays  = Number.isFinite(upV_days)  ? (v > upV_days)  : false; // greenより上
+  const exLikes = Number.isFinite(upV_likes) ? (v > upV_likes) : false; // greenより右
 
   if (exDays && exLikes) return "RED";
   if (exDays || exLikes) {
@@ -139,6 +139,32 @@ function classifyByUpper(p, baseline) {
     return "YELLOW";
   }
   return "NORMAL";
+}
+
+/* ★追加：初日の期待値（実力値）をヘッダに表示 */
+function renderPowerInfo(bundle) {
+  const el = $("#powerInfo");
+  if (!el) return;
+
+  const b = bundle?.latest?.baseline || {};
+  const title = bundle?.channel?.title || "";
+
+  const a = safeNum(b?.a_days, NaN);
+  const bb = safeNum(b?.b_days, NaN);
+
+  if (!(Number.isFinite(a) && Number.isFinite(bb))) {
+    el.textContent = "";
+    return;
+  }
+
+  // day=1 の expected views
+  const v1 = Math.exp(a + bb * 1.0);
+  if (!Number.isFinite(v1)) {
+    el.textContent = "";
+    return;
+  }
+
+  el.textContent = `実力値（初日期待再生）: ${fmtInt(Math.round(v1))}`;
 }
 
 function setInputMode(mode) {
@@ -232,6 +258,7 @@ function setActiveChannelItem(el) {
   if (state.activeChannelItem) state.activeChannelItem.classList.add("active");
 }
 
+/* Channels（異常度ワースト順）：sticky_red_count > 0 のみ */
 function renderChannelList(index) {
   const root = $("#channelList");
   if (!root) return;
@@ -283,12 +310,14 @@ function renderChannelSelect(index) {
   if (!sel) return;
   sel.innerHTML = "";
   const arr = Array.isArray(index?.channels) ? index.channels : [];
+
   arr.forEach((ch) => {
     const opt = document.createElement("option");
     opt.value = getChannelId(ch);
     opt.textContent = `${getChannelTitle(ch)} (sticky_red=${getStickyCount(ch)})`;
     sel.appendChild(opt);
   });
+
   sel.addEventListener("change", () => {
     const id = sel.value;
     if (id) setChannel(id).catch(console.error);
@@ -350,6 +379,10 @@ async function setChannel(channelId) {
   if (sel) sel.value = channelId;
 
   const bundle = await loadChannelBundle(channelId);
+
+  // ★追加：タイトル下に実力値（初日期待再生）表示
+  renderPowerInfo(bundle);
+
   renderBaselineInfo(bundle);
   await drawPlot(bundle);
   renderRedList(bundle);
@@ -373,7 +406,7 @@ function renderBaselineInfo(bundle) {
     ` / pulse=${PULSE_SPEED.toFixed(2)}`;
 }
 
-/* baseline lines（既存） */
+/* baseline lines */
 function linspace(xmin, xmax, n) {
   if (n <= 1) return [xmin];
   const arr = [];
@@ -599,11 +632,6 @@ async function drawPlot(bundle) {
     const rl = getRatioLike(p);
     const ar = getAnomalyRatio(p);
 
-    const upDays = upperViewsForDays(d, baseline);
-    const upLikes = upperViewsForLikes(l, baseline);
-    const exDays = Number.isFinite(upDays) ? (v > upDays) : false;
-    const exLikes = Number.isFinite(upLikes) ? (v > upLikes) : false;
-
     let x, y;
     if (state.mode === "views_days") { x = d; y = v; } else { x = v; y = l; }
 
@@ -616,10 +644,7 @@ async function drawPlot(bundle) {
 
     hover.push([
       `<b>${escapeHtml(title)}</b>`,
-      `判定: <b>${escapeHtml(label)}</b>（上限線基準）`,
-      `exDays: ${exDays} / exLikes: ${exLikes}`,
-      `upper_days(views): ${Number.isFinite(upDays) ? fmtInt(Math.round(upDays)) : "?"}`,
-      `upper_likes_x(views): ${Number.isFinite(upLikes) ? fmtInt(Math.round(upLikes)) : "?"}`,
+      `判定: <b>${escapeHtml(label)}</b>`,
       `days: ${Number.isFinite(d) ? d.toFixed(2) : "?"}`,
       `views: ${Number.isFinite(v) ? fmtInt(v) : "?"}`,
       `likes: ${Number.isFinite(l) ? fmtInt(l) : "?"}`,

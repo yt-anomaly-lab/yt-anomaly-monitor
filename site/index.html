@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>YouTube観測者</title>
-  <link rel="stylesheet" href="./style.css?v=20260104-layoutfix1" />
+  <link rel="stylesheet" href="./style.css?v=20260104-power1" />
   <link rel="icon" href="data:,">
   <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
 </head>
@@ -13,13 +13,15 @@
     <!-- 1) タイトル -->
     <div class="title">
       <div class="h1">YouTube観測者</div>
+      <!-- ★追加：チャンネル実力値（初日の期待値） -->
+      <div id="powerInfo" class="power"></div>
     </div>
 
     <div class="controls">
       <!-- 2) 選択・手入力 -->
       <div class="toggle" role="group" aria-label="channel input mode">
         <button id="btnInputSelect" class="btn active" type="button">観察リスト</button>
-        <button id="btnInputManual" class="btn" type="button">@アカウント入力</button>
+        <button id="btnInputManual" class="btn" type="button">@アカウント</button>
       </div>
 
       <label id="selectBox" class="ctrl">
@@ -38,8 +40,8 @@
 
       <!-- 3) 再生数/高評価 -->
       <div class="toggle" role="group" aria-label="plot mode">
-        <button id="btnViewsDays" class="btn active" type="button">再生数乖離評価</button>
-        <button id="btnViewsLikes" class="btn" type="button">高評価乖離評価</button>
+        <button id="btnViewsDays" class="btn active" type="button">自然再生数 解析</button>
+        <button id="btnViewsLikes" class="btn" type="button">対 高評価 解析</button>
       </div>
 
       <!-- 4) Y対数/リニア -->
@@ -101,6 +103,10 @@
   </main>
 
   <!-- キャッシュが強いので v= を更新 -->
-  <script src="app.js?v=20260104-front2"></script>
+  <script src="app.js?v=20260104-power1"></script>
 </body>
 </html>
+
+
+
+

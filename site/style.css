@@ -29,7 +29,19 @@ body{
   background:linear-gradient(180deg, rgba(0,0,0,.25), rgba(0,0,0,0));
 }
 
+/* ★タイトル下に情報を出すため縦積みに */
+.title{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
 .title .h1{font-size:18px; font-weight:700; letter-spacing:.3px}
+
+/* ★追加：チャンネル実力値の表示 */
+.power{
+  font-size:12px;
+  color:rgba(231,235,255,.78);
+}
 
 .controls{
   display:flex;
@@ -106,7 +118,6 @@ body{
 }
 
 /* ===== layout ===== */
-/* ★ここで左右を強制（左=main/panel, 右=side） */
 .layout{
   display:grid;
   grid-template-columns: 1fr 420px;
@@ -178,7 +189,7 @@ body{
   padding-right:6px;
 }
 
-/* ★非選択が見えにくい対策（色を固定） */
+/* 読みやすさ */
 .item{
   padding:10px;
   border-radius:12px;
@@ -199,9 +210,7 @@ body{
   background: rgba(255,255,255,.08);
   border-color: rgba(255,255,255,.18);
 }
-.item.active .t{
-  font-weight:800;
-}
+.item.active .t{ font-weight:800; }
 
 .about{
   font-size:12px;
@@ -209,16 +218,7 @@ body{
   line-height:1.6;
 }
 
-/* ===== Mobile: 指定順 =====
-   タイトル
-   選択・手入力
-   再生数/高評価
-   Y対数/リニア
-   グラフ
-   異常値上位
-   Channels
-   about
-*/
+/* ===== Mobile順序 ===== */
 @media (max-width: 900px){
   .topbar{
     flex-direction:column;
@@ -227,11 +227,10 @@ body{
   }
   .controls{
     width:100%;
-    flex-direction:column;   /* ← controlsを縦積み＝HTML順に並ぶ */
+    flex-direction:column;
     align-items:flex-start;
   }
 
-  /* 1カラム化（グラフ→side） */
   .layout{
     grid-template-columns: 1fr;
     grid-template-areas:
@@ -244,7 +243,6 @@ body{
     min-height: 420px;
   }
 
-  /* side内の順序固定 */
   .card-red{ order: 1; }
   .card-ch{ order: 2; }
   .card-about{ order: 3; }
