@@ -24,7 +24,7 @@ const state = {
   index: null,
   currentChannelId: null,
   mode: "views_days",
-  yLog: true,
+  yLog: false,
   inputMode: "select",
   channelCache: new Map(),
 
