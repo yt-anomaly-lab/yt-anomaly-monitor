@@ -1,0 +1,39 @@
+{
+  "kind": "youtube#channel",
+  "etag": "Hx13qoO_WhYxyIp8cXWXHGdTYiQ",
+  "id": "UC2kM01yXNnouBsJJ0ghyfMg",
+  "snippet": {
+    "title": "菅野完",
+    "description": "著述家・菅野完のYouTubeチャンネルです。流行のあの気持ち悪い・頭の悪そうな「端的に」「手短に」「断定口調」で話するという文化に抵抗するため、ウダウダ喋ってます。\nこのチャンネルの動画は「菅野完が喋ってる」ことがわかる形の動画にするのであれば、切り取り動画に利用するのは自由です。\n",
+    "customUrl": "@noiehoie",
+    "publishedAt": "2008-12-15T01:53:30Z",
+    "thumbnails": {
+      "default": {
+        "url": "https://yt3.ggpht.com/ytc/AIdro_mqYKPRewPEqMRyfqTPdxG19vCuk3NuBqTKyRPLANGTk0w=s88-c-k-c0x00ffffff-no-rj",
+        "width": 88,
+        "height": 88
+      },
+      "medium": {
+        "url": "https://yt3.ggpht.com/ytc/AIdro_mqYKPRewPEqMRyfqTPdxG19vCuk3NuBqTKyRPLANGTk0w=s240-c-k-c0x00ffffff-no-rj",
+        "width": 240,
+        "height": 240
+      },
+      "high": {
+        "url": "https://yt3.ggpht.com/ytc/AIdro_mqYKPRewPEqMRyfqTPdxG19vCuk3NuBqTKyRPLANGTk0w=s800-c-k-c0x00ffffff-no-rj",
+        "width": 800,
+        "height": 800
+      }
+    },
+    "localized": {
+      "title": "菅野完",
+      "description": "著述家・菅野完のYouTubeチャンネルです。流行のあの気持ち悪い・頭の悪そうな「端的に」「手短に」「断定口調」で話するという文化に抵抗するため、ウダウダ喋ってます。\nこのチャンネルの動画は「菅野完が喋ってる」ことがわかる形の動画にするのであれば、切り取り動画に利用するのは自由です。\n"
+    },
+    "country": "JP"
+  },
+  "contentDetails": {
+    "relatedPlaylists": {
+      "likes": "",
+      "uploads": "UU2kM01yXNnouBsJJ0ghyfMg"
+    }
+  }
+}

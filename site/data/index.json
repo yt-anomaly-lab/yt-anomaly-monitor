@@ -1,12 +1,7 @@
 {
-  "generated_at_utc": "2026-01-04T16:13:09.156123+00:00",
+  "generated_at_utc": "2026-01-04T16:47:51.955769+00:00",
   "watch_count": 3,
-  "warnings": [
-    {
-      "watch_key": "@nobuyuki_mizutani?si=x4kommc9pBdr2AcF",
-      "error": "handle not found: @nobuyuki_mizutani?si=x4kommc9pBdr2AcF"
-    }
-  ],
+  "warnings": [],
   "channels": [
     {
       "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
@@ -14,7 +9,7 @@
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 7,
-      "max_anomaly_ratio": 130.1879300401642
+      "max_anomaly_ratio": 130.51501250852303
     },
     {
       "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
@@ -22,7 +17,15 @@
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 7,
-      "max_anomaly_ratio": 130.18788968509094
+      "max_anomaly_ratio": 130.48887358846414
+    },
+    {
+      "channel_id": "UC2kM01yXNnouBsJJ0ghyfMg",
+      "watch_key": "@noiehoie",
+      "title": "菅野完",
+      "sticky_red_count": 0,
+      "red_top_count": 0,
+      "max_anomaly_ratio": 2.9941682572708186
     }
   ]
 }
