@@ -4,6 +4,10 @@
   --muted:#a8b0d8;
   --border:rgba(255,255,255,.08);
   --shadow:0 12px 30px rgba(0,0,0,.35);
+
+  --yellow:#facc15;
+  --orange:#fb923c;
+  --red:#ef4444;
 }
 
 *{box-sizing:border-box}
@@ -25,7 +29,6 @@ body{
 }
 
 .title .h1{font-size:18px; font-weight:700; letter-spacing:.3px}
-.title .sub{font-size:12px; color:var(--muted); margin-top:4px}
 
 .controls{
   display:flex;
@@ -104,7 +107,7 @@ body{
 
 .layout{
   display:grid;
-  grid-template-columns: 1fr 420px;
+  grid-template-columns: 1fr 420px; /* グラフ左・右ペイン */
   gap:14px;
   padding:14px;
 }
@@ -169,16 +172,45 @@ body{
   padding-right:6px;
 }
 
+/* 非選択が薄すぎる問題を解消（opacity不使用） */
 .item{
   padding:10px;
   border-radius:12px;
   border:1px solid var(--border);
   background:rgba(0,0,0,.18);
+  color:var(--text);
 }
 .item .t{font-size:12px; font-weight:650}
-.item .m{font-size:11px; color:var(--muted); margin-top:4px}
+.item .m{
+  font-size:11px;
+  color:rgba(231,235,255,.75);
+  margin-top:4px
+}
 .item a{color:inherit; text-decoration:none}
 .item a:hover{text-decoration:underline}
+
+/* 選択状態を明確化（Channelsクリックで .active 付与） */
+.item.active{
+  background: rgba(255,255,255,.08);
+  border-color: rgba(255,255,255,.18);
+}
+.item.active .t{
+  font-weight:800;
+}
+
+/* ラベル色の軽い視覚補助（必要なら） */
+.item .badge{
+  display:inline-block;
+  font-size:10px;
+  padding:2px 6px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.16);
+  margin-left:6px;
+  background:rgba(255,255,255,.05);
+}
+.badge.yellow{ border-color: rgba(250,204,21,.40); }
+.badge.orange{ border-color: rgba(251,146,60,.40); }
+.badge.red{ border-color: rgba(239,68,68,.40); }
 
 .about{
   font-size:12px;
@@ -188,8 +220,14 @@ body{
 
 /* -----------------------
    Mobile: 1カラム + 指定順
-   上から: チャンネル関連(ヘッダ) → グラフオプション(ヘッダ) → グラフ → RED表 → About
-   Channelsカードは最後に追いやる（邪魔防止）
+   タイトル
+   選択・手入力
+   再生数/高評価
+   Y対数/リニア
+   グラフ
+   異常値上位
+   Channels
+   about
 ------------------------ */
 @media (max-width: 900px){
   .topbar{
@@ -207,11 +245,11 @@ body{
     grid-template-columns: 1fr;
   }
 
-  /* side内の順序調整 */
-  .card-red{ order: 2; }
-  .card-about{ order: 3; }
-  .card-ch{ order: 4; } /* Channelsカードは最後 */
+  /* モバイルの順序（panel → red → channels → about） */
   .panel{ order: 1; }
+  .card-red{ order: 2; }
+  .card-ch{ order: 3; }
+  .card-about{ order: 4; }
 
   .plot-wrap{
     height: 70vh;
