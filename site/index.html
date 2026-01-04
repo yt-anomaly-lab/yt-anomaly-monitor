@@ -15,14 +15,14 @@
     </div>
 
     <div class="controls">
-      <!-- 入力方式トグル（モバイル順: ここが 2番目） -->
+      <!-- 入力方式トグル -->
       <div class="toggle" role="group" aria-label="channel input mode">
         <button id="btnInputSelect" class="btn active" type="button">選択</button>
         <button id="btnInputManual" class="btn" type="button">手入力（オンデマンド）</button>
       </div>
 
       <label id="selectBox" class="ctrl">
-        <span>Channel（ウオッチリストのみ）</span>
+        <span>Channel</span>
         <select id="channelSelect"></select>
       </label>
 
@@ -35,13 +35,13 @@
         <div id="manualHint" class="hint"></div>
       </label>
 
-      <!-- グラフ種別（モバイル順: 3番目） -->
+      <!-- グラフ種別 -->
       <div class="toggle" role="group" aria-label="plot mode">
         <button id="btnViewsDays" class="btn active" type="button">再生数乖離評価</button>
         <button id="btnViewsLikes" class="btn" type="button">高評価乖離評価</button>
       </div>
 
-      <!-- 自然流入図(Views×Days)専用: 縦軸 log on/off（モバイル順: 4番目） -->
+      <!-- 自然流入図(Views×Days)専用: 縦軸 log on/off -->
       <div class="toggle" role="group" aria-label="y axis scale">
         <button id="btnYLog" class="btn active" type="button">Y:対数表示</button>
         <button id="btnYLin" class="btn" type="button">Y:リニア表示</button>
@@ -50,7 +50,6 @@
   </header>
 
   <main class="layout">
-    <!-- モバイル順: 5番目（グラフ） -->
     <section class="panel">
       <div id="plotWrap" class="plot-wrap">
         <div id="plot" class="plot"></div>
@@ -62,21 +61,17 @@
       </div>
     </section>
 
-    <!-- 右側（モバイルではグラフ下に順序指定） -->
     <aside class="side">
-      <!-- モバイル順: 6番目 -->
       <div class="card card-red">
         <div class="card-title">異常値が上位の動画</div>
         <div id="redList" class="redlist"></div>
       </div>
 
-      <!-- モバイル順: 7番目 -->
       <div class="card card-ch">
         <div class="card-title">Channels（異常度ワースト順）</div>
         <div id="channelList" class="chlist"></div>
       </div>
 
-      <!-- モバイル順: 8番目 -->
       <div class="card card-about">
         <div class="card-title">about</div>
         <div class="about">
@@ -103,6 +98,6 @@
   </main>
 
   <!-- キャッシュが強いので v= を更新 -->
-  <script src="app.js?v=20260104-req1"></script>
+  <script src="app.js?v=20260104-ondemand1"></script>
 </body>
 </html>
