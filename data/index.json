@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-01-04T15:07:54.276965+00:00",
+  "generated_at_utc": "2026-01-04T15:11:59.961170+00:00",
   "watch_count": 3,
   "warnings": [],
   "channels": [
@@ -9,7 +9,7 @@
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 7,
-      "max_anomaly_ratio": 129.538882791168
+      "max_anomaly_ratio": 129.23157042408926
     },
     {
       "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
@@ -17,15 +17,15 @@
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 7,
-      "max_anomaly_ratio": 129.23161048272686
+      "max_anomaly_ratio": 129.23139728586904
     },
     {
-      "channel_id": "UC3iiZzWjLIu3nJ5WM-H29vw",
-      "watch_key": "@NOBUYUKI_MIZUTANI",
-      "title": "水谷伸之のドキュメントチャンネル『可視化する試み』",
+      "channel_id": "UCoDRjl0eACmDkILsV6M1OEw",
+      "watch_key": "@masaの呪物置き場",
+      "title": "masaの呪物置き場",
       "sticky_red_count": 0,
       "red_top_count": 0,
-      "max_anomaly_ratio": 4.915356888849643
+      "max_anomaly_ratio": 5.45232570898055
     }
   ]
 }
