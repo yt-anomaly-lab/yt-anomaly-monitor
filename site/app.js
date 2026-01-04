@@ -2,7 +2,6 @@
 
 const DATA_BASE = "./data";
 
-/* ===== 調整パラメータ ===== */
 const PULSE_SPEED = 0.65;
 const UPPER_MULT  = 1.00;
 
@@ -93,16 +92,61 @@ function getAnomalyRatio(p) { return safeNum(p?.anomaly_ratio, NaN); }
 function getRatioNat(p) { return safeNum(p?.ratio_nat, NaN); }
 function getRatioLike(p) { return safeNum(p?.ratio_like, NaN); }
 
-function classifyByExpected(p) {
-  const rn = getRatioNat(p);
-  const rl = getRatioLike(p);
+/* ===== 上限線(upper)超え判定 =====
+   - Views×Days:  上限線は y=upper(days) なので  views > upper(days) で超え
+   - Views×Likes: 上限線は x=upper(likes) なので views > upper(likes) で超え（=グリーンより右）
+*/
+function upperViewsForDays(days, baseline) {
+  const a = safeNum(baseline?.a_days, NaN);
+  const b = safeNum(baseline?.b_days, NaN);
+  const NAT_UP = safeNum(baseline?.NAT_UPPER_RATIO, NaN) * UPPER_MULT;
+  if (!(Number.isFinite(a) && Number.isFinite(b) && Number.isFinite(NAT_UP))) return NaN;
+
+  const d = Math.max(1, safeNum(days, NaN));
+  if (!Number.isFinite(d)) return NaN;
+
+  // ln(V_expected) = a + b*days
+  const log_center = a + b * d;
+  // ln(V_upper) = ln(V_expected) + ln(NAT_UP)
+  const log_upper = log_center + Math.log(NAT_UP);
+  return Math.exp(log_upper);
+}
+
+function upperViewsForLikes(likes, baseline) {
+  const b0 = safeNum(baseline?.b0, NaN);
+  const b1 = safeNum(baseline?.b1, NaN);
+  const NAT_UP = safeNum(baseline?.NAT_UPPER_RATIO, NaN) * UPPER_MULT;
+  if (!(Number.isFinite(b0) && Number.isFinite(b1) && Number.isFinite(NAT_UP))) return NaN;
+
+  const L = safeNum(likes, NaN);
+  if (!(Number.isFinite(L) && L > 0)) return NaN;
+
+  // ln(V_expected) = b0 + b1*ln(L)
+  const logV = b0 + b1 * Math.log(L);
+  const V_expected = Math.exp(logV);
+  // upperは x方向に NAT_UP 倍（make_plotsのupperと一致）
+  return V_expected * NAT_UP;
+}
+
+/* ★色判定：upper基準（要望どおり）
+   - どちらかが上限超え → 黄
+   - ただし anomaly_ratio >= 10 → オレンジ
+   - 両方が上限超え → 赤
+*/
+function classifyByUpper(p, baseline) {
+  const v = getViews(p);
+  const d = getDays(p);
+  const l = getLikes(p);
   const ar = getAnomalyRatio(p);
 
-  const exNat = Number.isFinite(rn) ? (rn > 1.0) : false;
-  const exLik = Number.isFinite(rl) ? (rl > 1.0) : false;
+  const upV_days  = upperViewsForDays(d, baseline);
+  const upV_likes = upperViewsForLikes(l, baseline);
 
-  if (exNat && exLik) return "RED";
-  if (exNat || exLik) {
+  const exDays  = Number.isFinite(upV_days)  ? (v > upV_days)  : false; // greenより上
+  const exLikes = Number.isFinite(upV_likes) ? (v > upV_likes) : false; // greenより右（viewsが大きい）
+
+  if (exDays && exLikes) return "RED";
+  if (exDays || exLikes) {
     if (Number.isFinite(ar) && ar >= 10.0) return "ORANGE";
     return "YELLOW";
   }
@@ -120,11 +164,9 @@ function showManualHint(msg) {
   const el = $("#manualHint");
   if (el) el.textContent = msg || "";
 }
-
 function normalizeManual(raw) {
   return String(raw || "").trim();
 }
-
 function findChannelIdByManualInput(raw) {
   const s = normalizeManual(raw);
   if (!s) return null;
@@ -143,14 +185,12 @@ function findChannelIdByManualInput(raw) {
 
 async function startOndemand(rawInput) {
   const payload = { channel: normalizeManual(rawInput) };
-
   const r = await fetch(ONDEMAND_ENDPOINT, {
     method: "POST",
     mode: "cors",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-
   const text = await r.text().catch(() => "");
   if (!r.ok) throw new Error(`ondemand http ${r.status}: ${text}`);
   try { return JSON.parse(text); } catch { return {}; }
@@ -163,7 +203,6 @@ async function refreshIndex() {
   renderChannelSelect(index);
   return index;
 }
-
 async function waitChannelIdFromIndex(rawInput) {
   const input = normalizeManual(rawInput);
   const lower = input.toLowerCase();
@@ -187,7 +226,6 @@ async function waitChannelIdFromIndex(rawInput) {
   }
   return null;
 }
-
 async function waitChannelDataReady(channelId) {
   const base = `${DATA_BASE}/channels/${channelId}`;
   const probe = `${base}/latest_points.json`;
@@ -206,13 +244,14 @@ function setActiveChannelItem(el) {
   if (state.activeChannelItem) state.activeChannelItem.classList.add("active");
 }
 
+/* Channels（異常度ワースト順）：sticky_red_count > 0 のみ */
 function renderChannelList(index) {
   const root = $("#channelList");
   if (!root) return;
   root.innerHTML = "";
 
   const arr0 = Array.isArray(index?.channels) ? index.channels : [];
-  const arr = arr0.filter(ch => getStickyCount(ch) > 0).slice(); // sticky_red無しは出さない
+  const arr = arr0.filter(ch => getStickyCount(ch) > 0).slice();
 
   arr.sort((a,b) => {
     const wa = getWorstAnomaly(a);
@@ -413,10 +452,10 @@ function buildBaselineTraces(mode, rows, baseline) {
   return traces;
 }
 
-function computeRedPlotPoints(rows, mode) {
+function computeRedPlotPoints(rows, mode, baseline) {
   const red = [];
   for (const p of rows) {
-    const label = classifyByExpected(p);
+    const label = classifyByUpper(p, baseline);
     if (label !== "RED") continue;
 
     const v = getViews(p);
@@ -576,7 +615,7 @@ async function drawPlot(bundle) {
     let x, y;
     if (state.mode === "views_days") { x = d; y = v; } else { x = v; y = l; }
 
-    const label = classifyByExpected(p);
+    const label = classifyByUpper(p, baseline);
 
     xs.push(x);
     ys.push(y);
@@ -585,7 +624,7 @@ async function drawPlot(bundle) {
 
     hover.push([
       `<b>${escapeHtml(title)}</b>`,
-      `判定: <b>${escapeHtml(label)}</b>`,
+      `判定: <b>${escapeHtml(label)}</b>（上限線基準）`,
       `days: ${Number.isFinite(d) ? d.toFixed(2) : "?"}`,
       `views: ${Number.isFinite(v) ? fmtInt(v) : "?"}`,
       `likes: ${Number.isFinite(l) ? fmtInt(l) : "?"}`,
@@ -629,7 +668,7 @@ async function drawPlot(bundle) {
 
   await Plotly.newPlot("plot", [scatter, ...lines], layout, { displayModeBar:true, responsive:true });
 
-  state.redPlotPoints = computeRedPlotPoints(rows, state.mode);
+  state.redPlotPoints = computeRedPlotPoints(rows, state.mode, baseline);
   syncPulseCanvasToPlot();
   ensurePulseLoop();
   attachPlotEventsOnce();
