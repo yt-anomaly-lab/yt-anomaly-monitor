@@ -164,7 +164,7 @@ function renderPowerInfo(bundle) {
     return;
   }
 
-  el.textContent = `実力値（初日期待再生）: ${fmtInt(Math.round(v1))}`;
+  el.textContent = `表示中の実力値（初日期待値）: ${fmtInt(Math.round(v1))}`;
 }
 
 function setInputMode(mode) {
