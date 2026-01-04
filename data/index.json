@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-01-04T09:17:21.903958+00:00",
+  "generated_at_utc": "2026-01-04T09:20:01.861724+00:00",
   "watch_count": 3,
   "warnings": [],
   "channels": [
@@ -9,7 +9,7 @@
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 7,
-      "max_anomaly_ratio": 127.14019383751177
+      "max_anomaly_ratio": 127.14083605435064
     },
     {
       "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
@@ -17,7 +17,7 @@
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 7,
-      "max_anomaly_ratio": 127.13678133578642
+      "max_anomaly_ratio": 127.13991007503763
     },
     {
       "channel_id": "UCoDRjl0eACmDkILsV6M1OEw",
@@ -25,7 +25,7 @@
       "title": "masaの呪物置き場",
       "sticky_red_count": 0,
       "red_top_count": 0,
-      "max_anomaly_ratio": 5.453069039612915
+      "max_anomaly_ratio": 5.453069039612877
     }
   ]
 }
