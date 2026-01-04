@@ -1,0 +1,38 @@
+{
+  "kind": "youtube#channel",
+  "etag": "N4Gu54Yn5ScFI4IDgLAfglYSOgg",
+  "id": "UCX1oh7OMONbzXQvDBu8ijdQ",
+  "snippet": {
+    "title": "カワウソさん",
+    "description": "カワウソアイドル｢ウッソン｣\nの中の人🦦\nウソは嘘でもカワウソは可愛い\nTiktok\nhttps://www.tiktok.com/@user9215834101698?_t=ZS-90rEhVHnCpV&_r=1",
+    "customUrl": "@kawauso-i6f",
+    "publishedAt": "2025-03-26T02:53:27.787972Z",
+    "thumbnails": {
+      "default": {
+        "url": "https://yt3.ggpht.com/tHDz9S_MHrf3TQVOGNgk12zZCRV5AqFRCe35Vd1_s5V0lxXPQS-0O5nEn6OllaidRBIX6a44=s88-c-k-c0x00ffffff-no-rj",
+        "width": 88,
+        "height": 88
+      },
+      "medium": {
+        "url": "https://yt3.ggpht.com/tHDz9S_MHrf3TQVOGNgk12zZCRV5AqFRCe35Vd1_s5V0lxXPQS-0O5nEn6OllaidRBIX6a44=s240-c-k-c0x00ffffff-no-rj",
+        "width": 240,
+        "height": 240
+      },
+      "high": {
+        "url": "https://yt3.ggpht.com/tHDz9S_MHrf3TQVOGNgk12zZCRV5AqFRCe35Vd1_s5V0lxXPQS-0O5nEn6OllaidRBIX6a44=s800-c-k-c0x00ffffff-no-rj",
+        "width": 800,
+        "height": 800
+      }
+    },
+    "localized": {
+      "title": "カワウソさん",
+      "description": "カワウソアイドル｢ウッソン｣\nの中の人🦦\nウソは嘘でもカワウソは可愛い\nTiktok\nhttps://www.tiktok.com/@user9215834101698?_t=ZS-90rEhVHnCpV&_r=1"
+    }
+  },
+  "contentDetails": {
+    "relatedPlaylists": {
+      "likes": "",
+      "uploads": "UUX1oh7OMONbzXQvDBu8ijdQ"
+    }
+  }
+}
