@@ -1,6 +1,6 @@
 {
-  "generated_at_utc": "2026-01-05T14:06:42.260051+00:00",
-  "watch_count": 3,
+  "generated_at_utc": "2026-01-05T14:38:25.360744+00:00",
+  "watch_count": 2,
   "warnings": [],
   "channels": [
     {
@@ -9,7 +9,7 @@
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 8,
-      "max_anomaly_ratio": 168.10603290713047
+      "max_anomaly_ratio": 168.27576658955718
     },
     {
       "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
@@ -17,15 +17,7 @@
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 8,
-      "max_anomaly_ratio": 167.94679183510112
-    },
-    {
-      "channel_id": "UCX1oh7OMONbzXQvDBu8ijdQ",
-      "watch_key": "@kawauso-i6f",
-      "title": "カワウソさん",
-      "sticky_red_count": 1,
-      "red_top_count": 1,
-      "max_anomaly_ratio": 9.192217434422206
+      "max_anomaly_ratio": 167.9463632906231
     }
   ]
 }
