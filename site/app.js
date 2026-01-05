@@ -50,8 +50,12 @@ function youtubeUrl(videoId) {
 async function fetchJson(path) {
   const r = await fetch(path, { cache: "no-store" });
   if (!r.ok) throw new Error(`fetch failed: ${path} (${r.status})`);
-  return await r.json();
+  const text = await r.text();
+  // NaN / Infinity を null に置換（暫定）
+  const fixed = text.replace(/:\s*NaN\b/g, ": null").replace(/:\s*Infinity\b/g, ": null").replace(/:\s*-Infinity\b/g, ": null");
+  return JSON.parse(fixed);
 }
+
 async function fetchMaybeOk(path) {
   const r = await fetch(path, { cache: "no-store" });
   return r.ok;
