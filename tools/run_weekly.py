@@ -9,6 +9,28 @@ import pandas as pd
 import statsmodels.formula.api as smf
 
 # ============================
+# JSONサニタイズ（重要）
+# - json.dumps はデフォルトで NaN/Infinity を出力してしまい、ブラウザが JSON.parse できず壊れる
+# - NaN/Inf を None(null) に落とし、allow_nan=False で混入時に即エラーにする
+# ============================
+def _json_sanitize(x):
+    if isinstance(x, float):
+        if math.isnan(x) or math.isinf(x):
+            return None
+        return x
+    if isinstance(x, dict):
+        return {k: _json_sanitize(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_json_sanitize(v) for v in x]
+    return x
+
+def dumps_json(obj, *, indent=2):
+    return json.dumps(_json_sanitize(obj), ensure_ascii=False, indent=indent, allow_nan=False)
+
+def dumps_jsonl(obj):
+    return json.dumps(_json_sanitize(obj), ensure_ascii=False, allow_nan=False)
+
+# ============================
 # make_plots.py のパラメータ（完全一致）
 # ============================
 NAT_QUANTILE = 0.6
@@ -99,12 +121,9 @@ def is_short_by_shorts_url(video_id: str) -> bool:
     url = f"https://www.youtube.com/shorts/{vid}"
     ok = False
     try:
-        # allow_redirects=True で最終URLを見る
         r = _HTTP.get(url, allow_redirects=True, timeout=10)
         final = (r.url or "")
-        # 最終URLが /shorts/<id> を含むならショート扱い
         ok = (f"/shorts/{vid}" in final)
-        # 連打抑制（YouTubeへの配慮）
         time.sleep(0.05)
     except Exception:
         ok = False
@@ -247,8 +266,9 @@ def compute_points_and_baseline(videos, run_at):
 
         durationSec = iso8601_duration_to_seconds(cd.get("duration", ""))
 
-        # ★改善：60秒超でも「/shorts/」判定で拾う
-        isShort = (durationSec <= 60) or is_short_by_shorts_url(vid)
+        # ★修正1：durationSec==0（durationが取れてない）を Short 扱いにしない
+        # ★修正2：60秒超でも「/shorts/」判定で拾う
+        isShort = ((durationSec > 0 and durationSec <= 60) or is_short_by_shorts_url(vid))
 
         rows.append(
             {
@@ -279,7 +299,7 @@ def compute_points_and_baseline(videos, run_at):
         }
 
     # ----------------------------
-    # NAT（再生×日数）側：ショートも含めてOK
+    # NAT（再生×日数）側：ショートも含めてOK（解析上は）
     # ----------------------------
     df_nat = df_all.copy()
     df_nat["logv"] = np.log(np.clip(df_nat["views"].astype(float), 1.0, None))
@@ -444,7 +464,7 @@ def update_state_and_red(points, state_path: Path):
     red_top = [p["video_id"] for p in reds[:RED_TRACK_MAX]]
 
     state_obj = {"sticky_red": sorted(list(sticky)), "red_top": red_top}
-    state_path.write_text(json.dumps(state_obj, ensure_ascii=False, indent=2), encoding="utf-8")
+    state_path.write_text(dumps_json(state_obj), encoding="utf-8")
     return state_obj
 
 
@@ -514,13 +534,13 @@ def main():
             ensure_dir(ch_dir)
 
             (ch_dir / "channel.json").write_text(
-                json.dumps(ch, ensure_ascii=False, indent=2),
+                dumps_json(ch),
                 encoding="utf-8",
             )
 
             pli = fetch_latest_playlist_items(uploads, MAX_VIDEOS)
             (ch_dir / "latest_500_playlistItems.json").write_text(
-                json.dumps(pli, ensure_ascii=False, indent=2),
+                dumps_json(pli),
                 encoding="utf-8",
             )
 
@@ -535,18 +555,18 @@ def main():
             points, baseline = compute_points_and_baseline(videos, run_at)
 
             (ch_dir / "latest_points.json").write_text(
-                json.dumps({"run_at_utc": run_at_utc, "points": points}, ensure_ascii=False, indent=2),
+                dumps_json({"run_at_utc": run_at_utc, "points": points}),
                 encoding="utf-8",
             )
 
             latest = {"run_at_utc": run_at_utc, "baseline": baseline}
 
             with (ch_dir / "runs.jsonl").open("a", encoding="utf-8") as f:
-                f.write(json.dumps(latest, ensure_ascii=False) + "\n")
+                f.write(dumps_jsonl(latest) + "\n")
 
             st = update_state_and_red(points, ch_dir / "state.json")
             (ch_dir / "latest.json").write_text(
-                json.dumps(latest, ensure_ascii=False, indent=2),
+                dumps_json(latest),
                 encoding="utf-8",
             )
 
@@ -592,7 +612,7 @@ def main():
         "warnings": warnings,
         "channels": channels_index,
     }
-    (DATA_DIR / "index.json").write_text(json.dumps(index_obj, ensure_ascii=False, indent=2), encoding="utf-8")
+    (DATA_DIR / "index.json").write_text(dumps_json(index_obj), encoding="utf-8")
 
     auto = [ch["channel_id"] for ch in channels_index if ch.get("sticky_red_count", 0) >= 3]
     WATCHLIST_AUTO.write_text("\n".join(auto) + ("\n" if auto else ""), encoding="utf-8")
