@@ -18,14 +18,13 @@ NAT_BIG_RATIO = 10.0
 LIKES_SUSPECT_RATIO = 3.0
 LIKES_BIG_RATIO = 10.0
 
-# fit mask / filters
 RECENT_DAYS_EXCLUDE = 7
 NAT_BUZZ_TOP_PCT = 95
 LIKES_GOOD_VIEWS_MIN = 100
 LIKES_MID_VIEWS_PCT = 80
 
 # ============================
-# オンデマンド自動追加の追加条件（今回確定）
+# オンデマンド自動追加の追加条件（確定）
 # ============================
 AUTO_WATCH_MIN_LATEST_COUNT = 50
 AUTO_WATCH_MIN_CHANNEL_AGE_DAYS = 180
@@ -36,7 +35,7 @@ AUTO_WATCH_MIN_CHANNEL_AGE_DAYS = 180
 MAX_VIDEOS = 500
 RED_TRACK_MAX = 100
 
-# ★改善：ショートは「高評価（likes）」の評価から除外する（流入側は残す）
+# ★ショートは likes 側評価から除外
 EXCLUDE_SHORTS = True
 
 YT_API_KEY = os.environ.get("YT_API_KEY", "").strip()
@@ -47,6 +46,13 @@ SITE_DATA_DIR = BASE_DIR / "site" / "data"
 WATCHLIST = DATA_DIR / "watchlist.txt"
 WATCHLIST_AUTO = DATA_DIR / "watchlist_auto.txt"
 
+# ★長めショート判定のためのHTTPセッション/キャッシュ
+_SHORTS_URL_CACHE = {}  # video_id -> bool
+_HTTP = requests.Session()
+_HTTP.headers.update({
+    "User-Agent": "yt-anomaly-monitor/shorts-detector",
+})
+
 
 def yt_get(url, params):
     r = requests.get(url, params=params, timeout=30)
@@ -55,7 +61,6 @@ def yt_get(url, params):
 
 
 def iso8601_duration_to_seconds(s):
-    # e.g. "PT1H2M3S"
     if not s or not s.startswith("PT"):
         return 0
     s = s[2:]
@@ -78,29 +83,47 @@ def iso8601_duration_to_seconds(s):
     return total
 
 
+def is_short_by_shorts_url(video_id: str) -> bool:
+    """
+    ★YouTube Data APIには「Shortsかどうか」の確実なフラグがないため、
+      /shorts/<id> にアクセスした際の最終URLで判定する。
+      - Shortsの場合: 最終URLが .../shorts/<id> のまま
+      - 非Shortsの場合: .../watch?v=<id> にリダイレクトされることが多い
+    """
+    vid = (video_id or "").strip()
+    if not vid:
+        return False
+    if vid in _SHORTS_URL_CACHE:
+        return _SHORTS_URL_CACHE[vid]
+
+    url = f"https://www.youtube.com/shorts/{vid}"
+    ok = False
+    try:
+        # allow_redirects=True で最終URLを見る
+        r = _HTTP.get(url, allow_redirects=True, timeout=10)
+        final = (r.url or "")
+        # 最終URLが /shorts/<id> を含むならショート扱い
+        ok = (f"/shorts/{vid}" in final)
+        # 連打抑制（YouTubeへの配慮）
+        time.sleep(0.05)
+    except Exception:
+        ok = False
+
+    _SHORTS_URL_CACHE[vid] = ok
+    return ok
+
+
 def resolve_channel_id(watch_key):
-    """
-    watch_key:
-      - "UC..." channel id
-      - "@handle" (or "handle") -> resolve via channels?forHandle
-    """
     key = (watch_key or "").strip()
     if not key:
         raise ValueError("empty watch_key")
-
     if key.startswith("UC"):
         return key
 
-    handle = key
-    if handle.startswith("@"):
-        handle = handle[1:]
+    handle = key[1:] if key.startswith("@") else key
 
     url = "https://www.googleapis.com/youtube/v3/channels"
-    params = {
-        "part": "id",
-        "forHandle": handle,
-        "key": YT_API_KEY,
-    }
+    params = {"part": "id", "forHandle": handle, "key": YT_API_KEY}
     js = yt_get(url, params)
     items = js.get("items", [])
     if not items:
@@ -110,11 +133,7 @@ def resolve_channel_id(watch_key):
 
 def fetch_channel(channel_id):
     url = "https://www.googleapis.com/youtube/v3/channels"
-    params = {
-        "part": "snippet,contentDetails",
-        "id": channel_id,
-        "key": YT_API_KEY,
-    }
+    params = {"part": "snippet,contentDetails", "id": channel_id, "key": YT_API_KEY}
     js = yt_get(url, params)
     items = js.get("items", [])
     if not items:
@@ -163,7 +182,6 @@ def chunked(xs, n):
 def fetch_videos(video_ids):
     url = "https://www.googleapis.com/youtube/v3/videos"
     videos = []
-
     for ch in chunked(video_ids, 50):
         params = {
             "part": "snippet,statistics,contentDetails",
@@ -174,7 +192,6 @@ def fetch_videos(video_ids):
         js = yt_get(url, params)
         videos.extend(js.get("items", []))
         time.sleep(0.05)
-
     return videos
 
 
@@ -229,7 +246,9 @@ def compute_points_and_baseline(videos, run_at):
         likeCount = int(st.get("likeCount", 0) or 0)
 
         durationSec = iso8601_duration_to_seconds(cd.get("duration", ""))
-        isShort = durationSec <= 60
+
+        # ★改善：60秒超でも「/shorts/」判定で拾う
+        isShort = (durationSec <= 60) or is_short_by_shorts_url(vid)
 
         rows.append(
             {
@@ -239,7 +258,6 @@ def compute_points_and_baseline(videos, run_at):
                 "days": t_days,
                 "views": viewCount,
                 "likes": likeCount,
-                # ★ここは既に作っている（フロントでも使うので残す）
                 "durationSec": int(durationSec),
                 "isShort": bool(isShort),
             }
@@ -261,10 +279,9 @@ def compute_points_and_baseline(videos, run_at):
         }
 
     # ----------------------------
-    # NAT（再生×日数）側：ショートも含めてOK（要望：likes側だけ除外）
+    # NAT（再生×日数）側：ショートも含めてOK
     # ----------------------------
     df_nat = df_all.copy()
-
     df_nat["logv"] = np.log(np.clip(df_nat["views"].astype(float), 1.0, None))
 
     df_fit = df_nat.copy()
@@ -294,7 +311,7 @@ def compute_points_and_baseline(videos, run_at):
     nat_level[ratio_nat >= NAT_BIG_RATIO] = "RED"
 
     # ----------------------------
-    # LIKES（再生×高評価）側：ショートを除外してフィット/判定
+    # LIKES（再生×高評価）側：ショートは除外してフィット/判定
     # ----------------------------
     if EXCLUDE_SHORTS and "isShort" in df_all.columns:
         df_like_base = df_all[~df_all["isShort"]].copy()
@@ -320,7 +337,6 @@ def compute_points_and_baseline(videos, run_at):
         like_b0 = float(b0)
         like_b1 = float(b1)
 
-    # ratio_like は「ショートは NaN」にして除外扱いにする
     ratio_like = np.full(len(df_all), np.nan, dtype=float)
     like_level = np.array(["NA"] * len(df_all), dtype=object)
 
@@ -345,7 +361,7 @@ def compute_points_and_baseline(videos, run_at):
             like_level[df_all["isShort"].to_numpy(dtype=bool)] = "NA"
 
     # ----------------------------
-    # points 出力（durationSec/isShort を必ず含める）
+    # points 出力（durationSec/isShort を含める）
     # ----------------------------
     points = []
     df_out = df_all.reset_index(drop=True)
@@ -362,12 +378,10 @@ def compute_points_and_baseline(videos, run_at):
             "ratio_like": (float(ratio_like[i]) if np.isfinite(ratio_like[i]) else float("nan")),
             "nat_level": str(nat_level[i]),
             "like_level": str(like_level[i]),
-            # ★追加：フロントでショート除外できるように
             "durationSec": int(r.get("durationSec", 0)),
             "isShort": bool(r.get("isShort", False)),
         }
 
-        # display_label は like_level="NA" を無視する
         if p["nat_level"] == "RED" or p["like_level"] == "RED":
             p["display_label"] = "RED"
         elif p["nat_level"] == "△" or p["like_level"] == "△":
@@ -375,7 +389,6 @@ def compute_points_and_baseline(videos, run_at):
         else:
             p["display_label"] = "OK"
 
-        # anomaly_ratio は like が NaN なら nat だけ
         rr_like = p["ratio_like"]
         if isinstance(rr_like, float) and math.isnan(rr_like):
             p["anomaly_ratio"] = float(p["ratio_nat"])
@@ -460,17 +473,8 @@ def append_watchlist_channel_id(channel_id: str) -> bool:
 
 def parse_args():
     p = argparse.ArgumentParser(description="Weekly (or on-demand) YouTube anomaly monitor data generator")
-    p.add_argument(
-        "--channel",
-        help="Process only this channel too (@handle or UC... channelId). If not in watchlist, it will still be analyzed.",
-        default="",
-    )
-    p.add_argument(
-        "--auto_watch_red_top",
-        type=int,
-        default=0,
-        help="If >0, append the channel_id to watchlist.txt when red_top_count >= this threshold AND extra guards are satisfied.",
-    )
+    p.add_argument("--channel", default="", help="Process only this channel too (@handle or UC... channelId).")
+    p.add_argument("--auto_watch_red_top", type=int, default=0, help="Auto append watchlist when red_top_count >= this.")
     return p.parse_args()
 
 
@@ -548,9 +552,6 @@ def main():
 
             max_anom = max((p.get("anomaly_ratio", 0.0) for p in points), default=0.0)
 
-            # ----------------------------
-            # on-demand auto watch（今回確定ルール）
-            # ----------------------------
             if args.auto_watch_red_top and int(args.auto_watch_red_top) > 0:
                 red_top_count = len(st.get("red_top", []))
                 latest_count = len(points)
@@ -565,17 +566,9 @@ def main():
                 ):
                     appended = append_watchlist_channel_id(cid)
                     if appended:
-                        print(
-                            "[ondemand] appended to watchlist:",
-                            cid,
-                            f"(red_top={red_top_count}, latest={latest_count}, age_days={int(channel_age_days)})",
-                        )
+                        print("[ondemand] appended to watchlist:", cid)
                 else:
-                    print(
-                        "[ondemand] NOT appended:",
-                        cid,
-                        f"(red_top={red_top_count}, latest={latest_count}, age_days={int(channel_age_days)})",
-                    )
+                    print("[ondemand] NOT appended:", cid)
 
             channels_index.append(
                 {
@@ -601,7 +594,6 @@ def main():
     }
     (DATA_DIR / "index.json").write_text(json.dumps(index_obj, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # 自動watchlist（従来仕様: sticky_red_count >= 3）
     auto = [ch["channel_id"] for ch in channels_index if ch.get("sticky_red_count", 0) >= 3]
     WATCHLIST_AUTO.write_text("\n".join(auto) + ("\n" if auto else ""), encoding="utf-8")
 
