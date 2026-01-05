@@ -67,10 +67,6 @@ function escapeHtml(s) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
-function pick(obj, keys) {
-  for (const k of keys) if (obj && obj[k] != null) return obj[k];
-  return undefined;
-}
 
 function getChannelId(ch) { return ch?.channel_id || ch?.channelId || ch?.id || ""; }
 function getChannelTitle(ch) { return ch?.title || ch?.handle || ch?.watch_key || ch?.watchKey || getChannelId(ch) || "(unknown)"; }
@@ -84,7 +80,7 @@ function normalizePoints(pointsJson) {
   return [];
 }
 
-/* 新形式優先（video_id / views / likes / days）＋旧形式フォールバック */
+/* ★新形式優先（video_id / views / likes / days）＋旧形式フォールバック */
 function getVideoId(p) { return p?.video_id || p?.videoId || p?.id || ""; }
 function getTitle(p) { return p?.title || "(no title)"; }
 function getDays(p) { return safeNum(p?.days, safeNum(p?.t_days, NaN)); }
@@ -203,6 +199,7 @@ function findChannelIdByManualInput(raw) {
   return hit ? getChannelId(hit) : null;
 }
 
+/* ★ondemandレスポンスがJSONじゃない/空のときに黙らない */
 async function startOndemand(rawInput) {
   const payload = { channel: normalizeManual(rawInput) };
   const r = await fetch(ONDEMAND_ENDPOINT, {
@@ -213,7 +210,14 @@ async function startOndemand(rawInput) {
   });
   const text = await r.text().catch(() => "");
   if (!r.ok) throw new Error(`ondemand http ${r.status}: ${text}`);
-  try { return JSON.parse(text); } catch { return {}; }
+
+  try {
+    const j = JSON.parse(text);
+    return j && typeof j === "object" ? j : {};
+  } catch (e) {
+    // ここで理由が見えるようにする
+    throw new Error(`ondemand response is not JSON: ${text.slice(0, 400)}`);
+  }
 }
 
 async function refreshIndex() {
@@ -224,11 +228,14 @@ async function refreshIndex() {
   return index;
 }
 
+/* ★進捗(i/60)を出す */
 async function waitChannelIdFromIndex(rawInput) {
   const input = normalizeManual(rawInput);
   const lower = input.toLowerCase();
 
   for (let i = 0; i < POLL_TRIES_INDEX; i++) {
+    showManualHint(`解析中…（index更新待ち ${i + 1}/${POLL_TRIES_INDEX}）`);
+
     const idx = await refreshIndex().catch(() => null);
     const arr = Array.isArray(idx?.channels) ? idx.channels : [];
 
@@ -252,6 +259,7 @@ async function waitChannelDataReady(channelId) {
   const base = `${DATA_BASE}/channels/${channelId}`;
   const probe = `${base}/latest_points.json`;
   for (let i = 0; i < POLL_TRIES_DATA; i++) {
+    showManualHint(`解析中…（データ生成待ち ${i + 1}/${POLL_TRIES_DATA}）`);
     const ok = await fetchMaybeOk(probe);
     if (ok) return true;
     await sleep(POLL_INTERVAL_MS);
@@ -611,13 +619,14 @@ async function drawPlot(bundle) {
 
   /* ★ショートは両モード共通で完全除外（判定も表示もしない） */
   const rows = points.filter(p => {
-    if (isShortPoint(p)) return false; // ←ここが今回の要件
+    if (isShortPoint(p)) return false;
 
     const v = getViews(p);
     const l = getLikes(p);
     const d = getDays(p);
 
     if (state.mode === "views_days") {
+      // ★likesは要求しない（ここを壊すと全件落ちる）
       return Number.isFinite(v) && v > 0 && Number.isFinite(d) && d >= 1;
     }
 
@@ -664,8 +673,6 @@ async function drawPlot(bundle) {
       `ratio_nat: ${Number.isFinite(rn) ? rn.toFixed(2) : "?"}`,
       `ratio_like: ${Number.isFinite(rl) ? rl.toFixed(2) : "NA"}`,
       `anomaly_ratio: ${Number.isFinite(ar) ? ar.toFixed(2) : "?"}`,
-      `durationSec: ${Number.isFinite(Number(p?.durationSec)) ? String(p.durationSec) : "?"}`,
-      `isShort: ${p?.isShort === true ? "true" : "false"}`,
       `<a href="${youtubeUrl(id)}" target="_blank" rel="noreferrer">open</a>`,
     ].join("<br>"));
   }
@@ -733,7 +740,7 @@ function renderRedList(bundle) {
     if (id) lookup.set(id, p);
   }
 
-  /* ★右ペインもショート完全除外（表示しない） */
+  /* ★右ペインもショート完全除外 */
   const list = redTop
     .slice(0, 80)
     .map((x) => {
@@ -786,23 +793,29 @@ async function boot() {
       const already = findChannelIdByManualInput(input);
       if (already) { showManualHint(""); await setChannel(already); return; }
 
-      showManualHint("解析中…（オンデマンド起動 → Pages反映待ち）");
+      showManualHint("解析中…（オンデマンド起動中）");
       const res = await startOndemand(input);
 
       let channelId =
         (res && (res.channel_id || res.channelId || res.id)) ||
         (input.startsWith("UC") ? input : null);
 
+      // JSONが返ってきてるなら、ここで少なくとも何か見える
       if (!channelId) {
         showManualHint("解析中…（index更新待ち）");
         channelId = await waitChannelIdFromIndex(input);
       }
 
-      if (!channelId) { showManualHint("オンデマンドは起動しましたが、チャンネルが index に反映されませんでした。"); return; }
+      if (!channelId) {
+        showManualHint("失敗: index にチャンネルが反映されませんでした（ondemand側で弾かれた/同期失敗の可能性）");
+        return;
+      }
 
-      showManualHint("解析中…（データ生成待ち）");
       const ok = await waitChannelDataReady(channelId);
-      if (!ok) { showManualHint("データがまだ反映されていません。"); return; }
+      if (!ok) {
+        showManualHint("失敗: data/channels/<id>/latest_points.json が反映されませんでした");
+        return;
+      }
 
       await refreshIndex().catch(() => {});
       showManualHint("");
