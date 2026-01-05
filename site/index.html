@@ -1,113 +1,92 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="utf-8">
   <title>YouTube観測者</title>
-  <link rel="stylesheet" href="./style.css?v=20260104-power1" />
-  <link rel="icon" href="data:,">
-  <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+
+  <!-- ★追加：Plotly -->
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 </head>
 <body>
-  <header class="topbar">
-    <!-- 1) タイトル -->
-    <div class="title">
-      <div class="h1">YouTube観測者</div>
-      <!-- ★追加：チャンネル実力値（初日の期待値） -->
-      <div id="powerInfo" class="power"></div>
-    </div>
 
-    <div class="controls">
-      <!-- 2) 選択・手入力 -->
-      <div class="toggle" role="group" aria-label="channel input mode">
-        <button id="btnInputSelect" class="btn active" type="button">観察リスト</button>
-        <button id="btnInputManual" class="btn" type="button">@アカウント</button>
+<header>
+  <h1>YouTube観測者</h1>
+</header>
+
+<div class="layout">
+  <aside class="side">
+    <section>
+      <h2>異常値が上位の動画</h2>
+      <div id="red-top"></div>
+    </section>
+
+    <section>
+      <h2>Channels（異常度ワースト順）</h2>
+      <div id="channel-list"></div>
+    </section>
+
+    <section>
+      <h2>about</h2>
+      <div class="about">
+        <p>
+          本ページは「再生挙動の統計的乖離」を可視化します。<br>
+          特定の不正を断定するものではありません。
+        </p>
+
+        <p>
+          解析は<br>
+          ・再生数と公開日数<br>
+          ・再生数と高評価数<br>
+          のそれぞれにおいて、そのチャンネルの実力を<br>
+          フィッティングモデルとして自動作成し、<br>
+          両解析で乖離した異常値をマークします。
+        </p>
+
+        <p>
+          異常値動画数が３以上あるチャンネルはウオッチリスト入りして定期観測します。<br>
+          ウオッチリストは履歴を保持し、一度異常値を検出した動画は削除後も恒久的に異常値として扱います。
+        </p>
       </div>
+    </section>
+  </aside>
 
-      <label id="selectBox" class="ctrl">
-        <span>Channel</span>
-        <select id="channelSelect"></select>
-      </label>
+  <main class="main">
+    <section>
+      <h2>再生数乖離評価</h2>
 
-      <label id="manualBox" class="ctrl hidden">
-        <span>チャンネル（@handle / UC...）</span>
-        <div class="manual-row">
-          <input id="channelInput" type="text" placeholder="@handle / UC..." />
-          <button id="btnLoadInput" class="btn2" type="button">解析する</button>
-        </div>
-        <div id="manualHint" class="hint"></div>
-      </label>
+      <!-- ★変更：canvas → div（Plotly描画先） -->
+      <div id="views-days" style="width:100%;height:320px;background:rgba(0,0,0,.2);border-radius:8px;"></div>
 
-      <!-- 3) 再生数/高評価 -->
-      <div class="toggle" role="group" aria-label="plot mode">
-        <button id="btnViewsDays" class="btn active" type="button">自然再生数 解析</button>
-        <button id="btnViewsLikes" class="btn" type="button">対 高評価 解析</button>
-      </div>
-
-      <!-- 4) Y対数/リニア -->
-      <div class="toggle" role="group" aria-label="y axis scale">
-        <button id="btnYLog" class="btn active" type="button">Y:対数表示</button>
-        <button id="btnYLin" class="btn" type="button">Y:リニア表示</button>
-      </div>
-    </div>
-  </header>
-
-  <main class="layout">
-    <!-- 5) グラフ -->
-    <section class="panel">
-      <div id="plotWrap" class="plot-wrap">
-        <div id="plot" class="plot"></div>
-        <canvas id="plotPulse" class="plot-pulse"></canvas>
-      </div>
-
-      <div class="note">
-        <div id="baselineInfo"></div>
+      <div class="graph-desc">
+        このグラフは再生数と公開日数を散布図でプロットしたものです。<br>
+        右に行くほど古い<br>
+        上に行くほど再生数が多い<br>
+        を意味します。<br>
+        オレンジ線はモデル化した期待値<br>
+        グリーン線は乖離判定に用いる期待値上限です
       </div>
     </section>
 
-    <!-- 6) 異常値上位 / 7) Channels / 8) about -->
-    <aside class="side">
-      <div class="card card-red">
-        <div class="card-title">異常値が上位の動画</div>
-        <div id="redList" class="redlist"></div>
+    <section>
+      <h2>高評価乖離評価</h2>
+
+      <!-- ★変更：canvas → div（Plotly描画先） -->
+      <div id="views-likes" style="width:100%;height:320px;background:rgba(0,0,0,.2);border-radius:8px;"></div>
+
+      <div class="graph-desc">
+        このグラフは再生数と高評価を散布図でプロットしたものです。<br>
+        右に行くほど再生が多い<br>
+        上に行くほど高評価が多い<br>
+        を意味します。<br>
+        オレンジ線はモデル化した期待値<br>
+        グリーン線は乖離判定に用いる期待値上限です
       </div>
-
-      <div class="card card-ch">
-        <div class="card-title">Channels（異常度ワースト順）</div>
-        <div id="channelList" class="chlist"></div>
-      </div>
-
-      <div class="card card-about">
-        <div class="card-title">about</div>
-        <div class="about">
-          <p>
-            本ページは「再生挙動の統計的乖離」を可視化します。<br>
-            特定の不正を断定するものではありません。
-          </p>
-
-          <p>
-            解析は<br>
-            ・再生数と公開日数<br>
-            ・再生数と高評価数<br>
-            のそれぞれにおいて、そのチャンネルの実力を フィッティングモデルとして自動作成し、<br>
-            両解析で乖離した異常値をマークします。
-          </p>
-
-          <p>
-            異常値動画数が３以上あるチャンネルはウオッチリスト入りして定期観測します。<br>
-            ウオッチリストは履歴を保持し、一度異常値を検出した動画は削除後も恒久的に異常値として扱います。
-          </p>
-        </div>
-      </div>
-    </aside>
+    </section>
   </main>
+</div>
 
-  <!-- キャッシュが強いので v= を更新 -->
-  <script src="app.js?v=20260104-subs-filter1"></script>
-
+<script src="app.js?v=20260105"></script>
 </body>
 </html>
-
-
-
-
