@@ -1,0 +1,38 @@
+{
+  "kind": "youtube#channel",
+  "etag": "Yi4wISwhtYkKiq88-KZ3nULgBE0",
+  "id": "UCmNGE-i5OFPZ3CFVnB-BkbA",
+  "snippet": {
+    "title": "カワウソさん",
+    "description": "",
+    "customUrl": "@カワウソさん",
+    "publishedAt": "2020-12-02T13:25:09.214312Z",
+    "thumbnails": {
+      "default": {
+        "url": "https://yt3.ggpht.com/ytc/AIdro_mw33WxStW9GCk7fEW1TtRirAzwws0XGcntWHtkOs21YA=s88-c-k-c0x00ffffff-no-rj",
+        "width": 88,
+        "height": 88
+      },
+      "medium": {
+        "url": "https://yt3.ggpht.com/ytc/AIdro_mw33WxStW9GCk7fEW1TtRirAzwws0XGcntWHtkOs21YA=s240-c-k-c0x00ffffff-no-rj",
+        "width": 240,
+        "height": 240
+      },
+      "high": {
+        "url": "https://yt3.ggpht.com/ytc/AIdro_mw33WxStW9GCk7fEW1TtRirAzwws0XGcntWHtkOs21YA=s800-c-k-c0x00ffffff-no-rj",
+        "width": 800,
+        "height": 800
+      }
+    },
+    "localized": {
+      "title": "カワウソさん",
+      "description": ""
+    }
+  },
+  "contentDetails": {
+    "relatedPlaylists": {
+      "likes": "",
+      "uploads": "UUmNGE-i5OFPZ3CFVnB-BkbA"
+    }
+  }
+}
