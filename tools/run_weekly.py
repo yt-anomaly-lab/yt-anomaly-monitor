@@ -36,7 +36,8 @@ AUTO_WATCH_MIN_CHANNEL_AGE_DAYS = 180
 MAX_VIDEOS = 500
 RED_TRACK_MAX = 100
 
-EXCLUDE_SHORTS = True  # isShort 列があれば除外
+# ★改善：ショートは「高評価（likes）」の評価から除外する（流入側は残す）
+EXCLUDE_SHORTS = True
 
 YT_API_KEY = os.environ.get("YT_API_KEY", "").strip()
 
@@ -238,13 +239,14 @@ def compute_points_and_baseline(videos, run_at):
                 "days": t_days,
                 "views": viewCount,
                 "likes": likeCount,
-                "durationSec": durationSec,
+                # ★ここは既に作っている（フロントでも使うので残す）
+                "durationSec": int(durationSec),
                 "isShort": bool(isShort),
             }
         )
 
-    df = pd.DataFrame(rows)
-    if df.empty:
+    df_all = pd.DataFrame(rows)
+    if df_all.empty:
         return [], {
             "nat_quantile": NAT_QUANTILE,
             "a_days": float("nan"),
@@ -258,12 +260,14 @@ def compute_points_and_baseline(videos, run_at):
             "fit_mask": {},
         }
 
-    if EXCLUDE_SHORTS and "isShort" in df.columns:
-        df = df[~df["isShort"]].copy()
+    # ----------------------------
+    # NAT（再生×日数）側：ショートも含めてOK（要望：likes側だけ除外）
+    # ----------------------------
+    df_nat = df_all.copy()
 
-    df["logv"] = np.log(np.clip(df["views"].astype(float), 1.0, None))
+    df_nat["logv"] = np.log(np.clip(df_nat["views"].astype(float), 1.0, None))
 
-    df_fit = df.copy()
+    df_fit = df_nat.copy()
     if RECENT_DAYS_EXCLUDE and RECENT_DAYS_EXCLUDE > 0:
         df_fit = df_fit[df_fit["days"] >= float(RECENT_DAYS_EXCLUDE)].copy()
 
@@ -280,16 +284,24 @@ def compute_points_and_baseline(videos, run_at):
         a_days = float(res.params.get("Intercept", float("nan")))
         b_days = float(res.params.get("days", float("nan")))
 
-    t = df["days"].astype(float).to_numpy()
+    t = df_nat["days"].astype(float).to_numpy()
     logv_center_all = a_days + b_days * t
     v_expected = np.exp(logv_center_all)
-    ratio_nat = df["views"].astype(float).to_numpy() / np.clip(v_expected, 1.0, None)
+    ratio_nat = df_nat["views"].astype(float).to_numpy() / np.clip(v_expected, 1.0, None)
 
-    nat_level = np.array(["OK"] * len(df), dtype=object)
+    nat_level = np.array(["OK"] * len(df_nat), dtype=object)
     nat_level[(ratio_nat >= NAT_UPPER_RATIO) & (ratio_nat < NAT_BIG_RATIO)] = "△"
     nat_level[ratio_nat >= NAT_BIG_RATIO] = "RED"
 
-    df2 = df.copy()
+    # ----------------------------
+    # LIKES（再生×高評価）側：ショートを除外してフィット/判定
+    # ----------------------------
+    if EXCLUDE_SHORTS and "isShort" in df_all.columns:
+        df_like_base = df_all[~df_all["isShort"]].copy()
+    else:
+        df_like_base = df_all.copy()
+
+    df2 = df_like_base.copy()
     df2 = df2[df2["likes"].astype(float) >= 1.0].copy()
     df2 = df2[df2["views"].astype(float) >= float(LIKES_GOOD_VIEWS_MIN)].copy()
 
@@ -308,18 +320,37 @@ def compute_points_and_baseline(videos, run_at):
         like_b0 = float(b0)
         like_b1 = float(b1)
 
-    likes_all = np.clip(df["likes"].astype(float).to_numpy(), 1.0, None)
-    logL_all = np.log(likes_all)
-    logV_expected = like_b0 + like_b1 * logL_all
-    v_expected_like = np.exp(logV_expected)
-    ratio_like = df["views"].astype(float).to_numpy() / np.clip(v_expected_like, 1.0, None)
+    # ratio_like は「ショートは NaN」にして除外扱いにする
+    ratio_like = np.full(len(df_all), np.nan, dtype=float)
+    like_level = np.array(["NA"] * len(df_all), dtype=object)
 
-    like_level = np.array(["OK"] * len(df), dtype=object)
-    like_level[(ratio_like >= LIKES_SUSPECT_RATIO) & (ratio_like < LIKES_BIG_RATIO)] = "△"
-    like_level[ratio_like >= LIKES_BIG_RATIO] = "RED"
+    if not (math.isnan(like_b0) or math.isnan(like_b1)):
+        likes_all = np.clip(df_all["likes"].astype(float).to_numpy(), 1.0, None)
+        logL_all = np.log(likes_all)
+        logV_expected = like_b0 + like_b1 * logL_all
+        v_expected_like = np.exp(logV_expected)
+        ratio_like_all = df_all["views"].astype(float).to_numpy() / np.clip(v_expected_like, 1.0, None)
 
+        if EXCLUDE_SHORTS and "isShort" in df_all.columns:
+            mask = ~df_all["isShort"].to_numpy(dtype=bool)
+        else:
+            mask = np.ones(len(df_all), dtype=bool)
+
+        ratio_like[mask] = ratio_like_all[mask]
+
+        like_level[:] = "OK"
+        like_level[(ratio_like >= LIKES_SUSPECT_RATIO) & (ratio_like < LIKES_BIG_RATIO)] = "△"
+        like_level[ratio_like >= LIKES_BIG_RATIO] = "RED"
+        if EXCLUDE_SHORTS and "isShort" in df_all.columns:
+            like_level[df_all["isShort"].to_numpy(dtype=bool)] = "NA"
+
+    # ----------------------------
+    # points 出力（durationSec/isShort を必ず含める）
+    # ----------------------------
     points = []
-    for i, r in df.reset_index(drop=True).iterrows():
+    df_out = df_all.reset_index(drop=True)
+
+    for i, r in df_out.iterrows():
         p = {
             "video_id": r["video_id"],
             "title": r["title"],
@@ -328,10 +359,15 @@ def compute_points_and_baseline(videos, run_at):
             "views": int(r["views"]),
             "likes": int(r["likes"]),
             "ratio_nat": float(ratio_nat[i]),
-            "ratio_like": float(ratio_like[i]),
+            "ratio_like": (float(ratio_like[i]) if np.isfinite(ratio_like[i]) else float("nan")),
             "nat_level": str(nat_level[i]),
             "like_level": str(like_level[i]),
+            # ★追加：フロントでショート除外できるように
+            "durationSec": int(r.get("durationSec", 0)),
+            "isShort": bool(r.get("isShort", False)),
         }
+
+        # display_label は like_level="NA" を無視する
         if p["nat_level"] == "RED" or p["like_level"] == "RED":
             p["display_label"] = "RED"
         elif p["nat_level"] == "△" or p["like_level"] == "△":
@@ -339,7 +375,13 @@ def compute_points_and_baseline(videos, run_at):
         else:
             p["display_label"] = "OK"
 
-        p["anomaly_ratio"] = float(max(p["ratio_nat"], p["ratio_like"]))
+        # anomaly_ratio は like が NaN なら nat だけ
+        rr_like = p["ratio_like"]
+        if isinstance(rr_like, float) and math.isnan(rr_like):
+            p["anomaly_ratio"] = float(p["ratio_nat"])
+        else:
+            p["anomaly_ratio"] = float(max(p["ratio_nat"], rr_like))
+
         points.append(p)
 
     baseline = {
@@ -357,6 +399,7 @@ def compute_points_and_baseline(videos, run_at):
             "NAT_BUZZ_TOP_PCT": NAT_BUZZ_TOP_PCT,
             "likes_good_views_min": LIKES_GOOD_VIEWS_MIN,
             "likes_mid_views_pct": LIKES_MID_VIEWS_PCT,
+            "EXCLUDE_SHORTS_LIKES": bool(EXCLUDE_SHORTS),
         },
     }
 
@@ -507,9 +550,6 @@ def main():
 
             # ----------------------------
             # on-demand auto watch（今回確定ルール）
-            #   red_top_count >= threshold
-            #   AND latest_count >= 50
-            #   AND channel_age_days >= 180
             # ----------------------------
             if args.auto_watch_red_top and int(args.auto_watch_red_top) > 0:
                 red_top_count = len(st.get("red_top", []))
