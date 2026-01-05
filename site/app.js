@@ -75,12 +75,17 @@
      ★ SHORTS 判定（集約）
      =========================== */
   function isShortVideo(p) {
+    // 明示フラグ
     if (p?.is_short === true) return true;
 
+    // 再生時間（秒）
     const dur =
       Number(p?.duration_sec ?? p?.duration ?? NaN);
-    if (Number.isFinite(dur) && dur > 0 && dur <= 60) return true;
 
+    // ★ 2分（120秒）以下はすべてショート扱い
+    if (Number.isFinite(dur) && dur > 0 && dur <= 120) return true;
+
+    // タイトル・説明・タグに #shorts
     const text = (
       (p?.title ?? "") +
       " " +
@@ -88,10 +93,12 @@
       " " +
       (Array.isArray(p?.tags) ? p.tags.join(" ") : "")
     ).toLowerCase();
+
     if (text.includes("#shorts")) return true;
 
     return false;
   }
+
 
   function getChannelId(ch) { return ch?.channel_id || ch?.channelId || ch?.id || ""; }
   function getChannelTitle(ch) { return ch?.title || ch?.handle || ch?.watch_key || ch?.watchKey || getChannelId(ch) || "(unknown)"; }
