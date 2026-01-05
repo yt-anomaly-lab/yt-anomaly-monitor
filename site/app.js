@@ -83,16 +83,18 @@ function normalizePoints(pointsJson) {
   if (pointsJson && Array.isArray(pointsJson.items)) return pointsJson.items;
   return [];
 }
-function getVideoId(p) { return p?.videoId || p?.video_id || p?.id || ""; }
+
+/* 新形式優先（video_id / views / likes / days）＋旧形式フォールバック */
+function getVideoId(p) { return p?.video_id || p?.videoId || p?.id || ""; }
 function getTitle(p) { return p?.title || "(no title)"; }
-function getDays(p) { return safeNum(p?.t_days, safeNum(p?.days, NaN)); }
-function getViews(p) { return safeNum(p?.viewCount, safeNum(p?.views, NaN)); }
-function getLikes(p) { return safeNum(p?.likeCount, safeNum(p?.likes, NaN)); }
+function getDays(p) { return safeNum(p?.days, safeNum(p?.t_days, NaN)); }
+function getViews(p) { return safeNum(p?.views, safeNum(p?.viewCount, NaN)); }
+function getLikes(p) { return safeNum(p?.likes, safeNum(p?.likeCount, NaN)); }
 function getAnomalyRatio(p) { return safeNum(p?.anomaly_ratio, NaN); }
 function getRatioNat(p) { return safeNum(p?.ratio_nat, NaN); }
 function getRatioLike(p) { return safeNum(p?.ratio_like, NaN); }
 
-/* ★ショート判定（データが入ったら確実、入ってなくてもfalse） */
+/* ★ショート判定（run_weekly.py の isShort を最優先） */
 function isShortPoint(p) {
   if (p?.isShort === true) return true;
   const dur = Number(p?.durationSec);
@@ -149,7 +151,7 @@ function classifyByUpper(p, baseline) {
   return "NORMAL";
 }
 
-/* 実力値表示（既存） */
+/* 実力値表示 */
 function renderPowerInfo(bundle) {
   const el = $("#powerInfo");
   if (!el) return;
@@ -407,7 +409,7 @@ function renderBaselineInfo(bundle) {
     ` / pulse=${PULSE_SPEED.toFixed(2)}`;
 }
 
-/* baseline lines（既存） */
+/* baseline lines */
 function linspace(xmin, xmax, n) {
   if (n <= 1) return [xmin];
   const arr = [];
@@ -493,7 +495,6 @@ function computeRedPlotPoints(rows, mode, baseline) {
   return red;
 }
 
-/* pulse overlayなどは既存のまま（省略せず全量維持が理想だが、ここでは省略しないために続けます） */
 function syncPulseCanvasToPlot() {
   const gd = $("#plot");
   const c  = $("#plotPulse");
@@ -608,18 +609,23 @@ async function drawPlot(bundle) {
   const points = Array.isArray(bundle?.points) ? bundle.points : [];
   const baseline = bundle?.latest?.baseline || {};
 
+  /* ★ショートは両モード共通で完全除外（判定も表示もしない） */
   const rows = points.filter(p => {
+    if (isShortPoint(p)) return false; // ←ここが今回の要件
+
     const v = getViews(p);
     const l = getLikes(p);
     const d = getDays(p);
-    if (!(v > 0 && l > 0)) return false;
 
-    if (state.mode === "views_days") return d >= 1;
+    if (state.mode === "views_days") {
+      return Number.isFinite(v) && v > 0 && Number.isFinite(d) && d >= 1;
+    }
 
-    // ★高評価（views_likes）ではショートを除外
-    if (state.mode === "views_likes" && isShortPoint(p)) return false;
+    if (state.mode === "views_likes") {
+      return (Number.isFinite(v) && v > 0 && Number.isFinite(l) && l > 0);
+    }
 
-    return true;
+    return false;
   });
 
   const xs = [];
@@ -651,7 +657,7 @@ async function drawPlot(bundle) {
 
     hover.push([
       `<b>${escapeHtml(title)}</b>`,
-      `判定: <b>${escapeHtml(label)}</b>` + (state.mode === "views_likes" ? "（ショート除外）" : ""),
+      `判定: <b>${escapeHtml(label)}</b>`,
       `days: ${Number.isFinite(d) ? d.toFixed(2) : "?"}`,
       `views: ${Number.isFinite(v) ? fmtInt(v) : "?"}`,
       `likes: ${Number.isFinite(l) ? fmtInt(l) : "?"}`,
@@ -686,7 +692,7 @@ async function drawPlot(bundle) {
   };
 
   if (state.mode === "views_days") {
-    layout.title = { text: "再生数乖離評価", x: 0.02 };
+    layout.title = { text: "再生数乖離評価（ショート除外）", x: 0.02 };
     layout.xaxis = { title: "days since publish", type: "linear", gridcolor: "rgba(255,255,255,0.06)" };
     layout.yaxis = { title: "views", type: state.yLog ? "log" : "linear", gridcolor: "rgba(255,255,255,0.06)" };
   } else {
@@ -706,7 +712,7 @@ async function drawPlot(bundle) {
   renderBaselineInfo(bundle);
 }
 
-/* RED list は state.json 依存なので、ここでは現状維持（必要なら isShort除外も可能） */
+/* RED list */
 function normalizeRedTop(st) {
   const raw = Array.isArray(st?.red_top) ? st.red_top : Array.isArray(st?.redTop) ? st.redTop : [];
   return raw.map((it) => (typeof it === "string" ? { video_id: it } : it)).filter(Boolean);
@@ -727,18 +733,22 @@ function renderRedList(bundle) {
     if (id) lookup.set(id, p);
   }
 
-  const list = redTop.slice(0, 30).map((x) => {
-    const id = getVideoId(x) || x.video_id || x.id || "";
-    return lookup.get(id) || x;
-  });
+  /* ★右ペインもショート完全除外（表示しない） */
+  const list = redTop
+    .slice(0, 80)
+    .map((x) => {
+      const id = getVideoId(x) || x.video_id || x.id || "";
+      return lookup.get(id) || x;
+    })
+    .filter((p) => !isShortPoint(p))
+    .slice(0, 30);
 
   if (!list.length) {
-    root.innerHTML = `<div class="item"><div class="m">異常値が上位の動画がありません</div></div>`;
+    root.innerHTML = `<div class="item"><div class="m">異常値が上位の動画がありません（ショート除外）</div></div>`;
     return;
   }
 
   for (const p of list) {
-    // ここでショートも消したいなら：if (p?.isShort === true) continue;
     const id = getVideoId(p) || p.video_id || "";
     const title = getTitle(p);
     const ar = getAnomalyRatio(p);
