@@ -1,12 +1,7 @@
 {
-  "generated_at_utc": "2026-01-05T07:32:48.016737+00:00",
+  "generated_at_utc": "2026-01-05T07:33:35.902759+00:00",
   "watch_count": 3,
-  "warnings": [
-    {
-      "watch_key": "@カワウソさん",
-      "error": "404 Client Error: Not Found for url: https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=UUmNGE-i5OFPZ3CFVnB-BkbA&maxResults=50&pageToken=&key=AIzaSyAM1dvctGj7P9f9-bF6f_tife8p58MfwNY"
-    }
-  ],
+  "warnings": [],
   "channels": [
     {
       "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
@@ -14,7 +9,7 @@
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 7,
-      "max_anomaly_ratio": 134.07661121902558
+      "max_anomaly_ratio": 134.1956693639537
     },
     {
       "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
@@ -22,7 +17,15 @@
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 7,
-      "max_anomaly_ratio": 134.07661121902558
+      "max_anomaly_ratio": 134.09282266717392
+    },
+    {
+      "channel_id": "UCX1oh7OMONbzXQvDBu8ijdQ",
+      "watch_key": "@kawauso-i6f",
+      "title": "カワウソさん",
+      "sticky_red_count": 1,
+      "red_top_count": 1,
+      "max_anomaly_ratio": 11.895720768662642
     }
   ]
 }
