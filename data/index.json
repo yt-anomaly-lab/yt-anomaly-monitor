@@ -1,31 +1,28 @@
 {
-  "generated_at_utc": "2026-01-05T18:20:25.536996+00:00",
+  "generated_at_utc": "2026-01-05T18:23:58.532151+00:00",
   "watch_count": 3,
-  "warnings": [],
-  "channels": [
+  "warnings": [
     {
-      "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
-      "watch_key": "UCB9cirTse_-h02qZ6ctmBzw",
-      "title": "trueman_project",
-      "sticky_red_count": 8,
-      "red_top_count": 8,
-      "max_anomaly_ratio": 167.60003174663973
-    },
+      "watch_key": "@nobuyuki_mizutani?si=4rQVWWl36RDy_bOV",
+      "error": "handle not found: @nobuyuki_mizutani?si=4rQVWWl36RDy_bOV"
+    }
+  ],
+  "channels": [
     {
       "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
       "watch_key": "@trueman_project",
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 8,
-      "max_anomaly_ratio": 167.59213798176378
+      "max_anomaly_ratio": 167.7612234385999
     },
     {
-      "channel_id": "UC3iiZzWjLIu3nJ5WM-H29vw",
-      "watch_key": "@nobuyuki_mizutani",
-      "title": "水谷伸之のドキュメントチャンネル『可視化する試み』",
-      "sticky_red_count": 0,
-      "red_top_count": 0,
-      "max_anomaly_ratio": 4.848105894765116
+      "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
+      "watch_key": "UCB9cirTse_-h02qZ6ctmBzw",
+      "title": "trueman_project",
+      "sticky_red_count": 8,
+      "red_top_count": 8,
+      "max_anomaly_ratio": 167.60027135419742
     }
   ]
 }
