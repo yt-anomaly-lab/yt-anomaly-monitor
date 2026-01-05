@@ -1,23 +1,31 @@
 {
-  "generated_at_utc": "2026-01-05T11:32:37.329311+00:00",
-  "watch_count": 2,
+  "generated_at_utc": "2026-01-05T13:24:39.119989+00:00",
+  "watch_count": 3,
   "warnings": [],
   "channels": [
-    {
-      "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
-      "watch_key": "UCB9cirTse_-h02qZ6ctmBzw",
-      "title": "trueman_project",
-      "sticky_red_count": 8,
-      "red_top_count": 8,
-      "max_anomaly_ratio": 168.29964291156907
-    },
     {
       "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
       "watch_key": "@trueman_project",
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 8,
-      "max_anomaly_ratio": 168.29213085568352
+      "max_anomaly_ratio": 168.29137830376547
+    },
+    {
+      "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
+      "watch_key": "UCB9cirTse_-h02qZ6ctmBzw",
+      "title": "trueman_project",
+      "sticky_red_count": 8,
+      "red_top_count": 8,
+      "max_anomaly_ratio": 168.1147702960115
+    },
+    {
+      "channel_id": "UCX1oh7OMONbzXQvDBu8ijdQ",
+      "watch_key": "@kawauso-i6f",
+      "title": "カワウソさん",
+      "sticky_red_count": 1,
+      "red_top_count": 1,
+      "max_anomaly_ratio": 11.890781117585533
     }
   ]
 }

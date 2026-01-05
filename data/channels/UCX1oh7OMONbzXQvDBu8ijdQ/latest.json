@@ -1,20 +1,21 @@
 {
-  "run_at_utc": "2026-01-05T07:34:53.007676+00:00",
+  "run_at_utc": "2026-01-05T13:24:39.119989+00:00",
   "baseline": {
     "nat_quantile": 0.6,
-    "a_days": 6.287070223269113,
-    "b_days": 0.0009503692065252729,
+    "a_days": 6.286031407081611,
+    "b_days": 0.0009812132325661912,
     "NAT_UPPER_RATIO": 3.0,
     "NAT_BIG_RATIO": 10.0,
-    "b0": 6.1878220037802745,
-    "b1": -0.03127340205750835,
+    "b0": 6.188029389719407,
+    "b1": -0.0312162360299287,
     "LIKES_SUSPECT_RATIO": 3.0,
     "LIKES_BIG_RATIO": 10.0,
     "fit_mask": {
       "RECENT_DAYS_EXCLUDE": 7,
       "NAT_BUZZ_TOP_PCT": 95,
       "likes_good_views_min": 100,
-      "likes_mid_views_pct": 80
+      "likes_mid_views_pct": 80,
+      "EXCLUDE_SHORTS_LIKES": true
     }
   }
 }
