@@ -9,6 +9,12 @@ import pandas as pd
 import statsmodels.formula.api as smf
 
 # ============================
+# Generator version (超重要)
+# - 本番がこのコードで生成したかを生成物から判定するための印
+# ============================
+GENERATOR_VERSION = "sanitize+probe+shortfix-20260106-01"
+
+# ============================
 # JSONサニタイズ（重要）
 # - json.dumps はデフォルトで NaN/Infinity を出力してしまい、ブラウザが JSON.parse できず壊れる
 # - NaN/Inf を None(null) に落とし、allow_nan=False で混入時に即エラーにする
@@ -266,8 +272,8 @@ def compute_points_and_baseline(videos, run_at):
 
         durationSec = iso8601_duration_to_seconds(cd.get("duration", ""))
 
-        # ★修正1：durationSec==0（durationが取れてない）を Short 扱いにしない
-        # ★修正2：60秒超でも「/shorts/」判定で拾う
+        # ★修正：durationSec==0（durationが取れてない）を Short 扱いにしない
+        # ★60秒超でも「/shorts/」判定で拾う
         isShort = ((durationSec > 0 and durationSec <= 60) or is_short_by_shorts_url(vid))
 
         rows.append(
@@ -285,6 +291,7 @@ def compute_points_and_baseline(videos, run_at):
 
     df_all = pd.DataFrame(rows)
     if df_all.empty:
+        # baseline に nan を入れても dumps_json で None 化される（＋allow_nan=Falseで検知もできる）
         return [], {
             "nat_quantile": NAT_QUANTILE,
             "a_days": float("nan"),
@@ -299,7 +306,7 @@ def compute_points_and_baseline(videos, run_at):
         }
 
     # ----------------------------
-    # NAT（再生×日数）側：ショートも含めてOK（解析上は）
+    # NAT（再生×日数）側：フィットはショート含めてもOK（ただしフロントでは除外運用も可）
     # ----------------------------
     df_nat = df_all.copy()
     df_nat["logv"] = np.log(np.clip(df_nat["views"].astype(float), 1.0, None))
@@ -382,11 +389,15 @@ def compute_points_and_baseline(videos, run_at):
 
     # ----------------------------
     # points 出力（durationSec/isShort を含める）
+    # - ratio_like は NaN を作らず None にする（ここでNaNを出すと grep で検知される）
     # ----------------------------
     points = []
     df_out = df_all.reset_index(drop=True)
 
     for i, r in df_out.iterrows():
+        rl = ratio_like[i]
+        rl_out = float(rl) if np.isfinite(rl) else None
+
         p = {
             "video_id": r["video_id"],
             "title": r["title"],
@@ -395,7 +406,7 @@ def compute_points_and_baseline(videos, run_at):
             "views": int(r["views"]),
             "likes": int(r["likes"]),
             "ratio_nat": float(ratio_nat[i]),
-            "ratio_like": (float(ratio_like[i]) if np.isfinite(ratio_like[i]) else float("nan")),
+            "ratio_like": rl_out,
             "nat_level": str(nat_level[i]),
             "like_level": str(like_level[i]),
             "durationSec": int(r.get("durationSec", 0)),
@@ -409,11 +420,10 @@ def compute_points_and_baseline(videos, run_at):
         else:
             p["display_label"] = "OK"
 
-        rr_like = p["ratio_like"]
-        if isinstance(rr_like, float) and math.isnan(rr_like):
+        if p["ratio_like"] is None:
             p["anomaly_ratio"] = float(p["ratio_nat"])
         else:
-            p["anomaly_ratio"] = float(max(p["ratio_nat"], rr_like))
+            p["anomaly_ratio"] = float(max(p["ratio_nat"], p["ratio_like"]))
 
         points.append(p)
 
@@ -460,7 +470,7 @@ def update_state_and_red(points, state_path: Path):
             p["sticky_red"] = True
 
     reds = [p for p in points if p.get("sticky_red") or p.get("display_label") == "RED"]
-    reds.sort(key=lambda x: x.get("anomaly_ratio", 0.0), reverse=True)
+    reds.sort(key=lambda x: (x.get("anomaly_ratio") or 0.0), reverse=True)
     red_top = [p["video_id"] for p in reds[:RED_TRACK_MAX]]
 
     state_obj = {"sticky_red": sorted(list(sticky)), "red_top": red_top}
@@ -554,30 +564,35 @@ def main():
 
             points, baseline = compute_points_and_baseline(videos, run_at)
 
+            # ★generator_version を必ず入れる（本番がこのコードを使ったか確認用）
             (ch_dir / "latest_points.json").write_text(
-                dumps_json({"run_at_utc": run_at_utc, "points": points}),
+                dumps_json({
+                    "run_at_utc": run_at_utc,
+                    "generator_version": GENERATOR_VERSION,
+                    "points": points
+                }),
                 encoding="utf-8",
             )
 
             latest = {"run_at_utc": run_at_utc, "baseline": baseline}
 
             with (ch_dir / "runs.jsonl").open("a", encoding="utf-8") as f:
-                f.write(dumps_jsonl(latest) + "\n")
+                f.write(dumps_jsonl({"generator_version": GENERATOR_VERSION, **latest}) + "\n")
 
             st = update_state_and_red(points, ch_dir / "state.json")
             (ch_dir / "latest.json").write_text(
-                dumps_json(latest),
+                dumps_json({"generator_version": GENERATOR_VERSION, **latest}),
                 encoding="utf-8",
             )
 
-            max_anom = max((p.get("anomaly_ratio", 0.0) for p in points), default=0.0)
+            max_anom = max((p.get("anomaly_ratio", 0.0) or 0.0 for p in points), default=0.0)
 
             if args.auto_watch_red_top and int(args.auto_watch_red_top) > 0:
                 red_top_count = len(st.get("red_top", []))
                 latest_count = len(points)
                 channel_age_days = 0
                 if points:
-                    channel_age_days = max(p.get("days", 0) for p in points)
+                    channel_age_days = max(p.get("days", 0) or 0 for p in points)
 
                 if (
                     red_top_count >= int(args.auto_watch_red_top)
@@ -604,17 +619,18 @@ def main():
         except Exception as e:
             warnings.append({"watch_key": watch_key, "error": str(e)})
 
-    channels_index.sort(key=lambda x: x.get("max_anomaly_ratio", 0.0), reverse=True)
+    channels_index.sort(key=lambda x: (x.get("max_anomaly_ratio", 0.0) or 0.0), reverse=True)
 
     index_obj = {
         "generated_at_utc": run_at_utc,
+        "generator_version": GENERATOR_VERSION,
         "watch_count": len(watch_run),
         "warnings": warnings,
         "channels": channels_index,
     }
     (DATA_DIR / "index.json").write_text(dumps_json(index_obj), encoding="utf-8")
 
-    auto = [ch["channel_id"] for ch in channels_index if ch.get("sticky_red_count", 0) >= 3]
+    auto = [ch["channel_id"] for ch in channels_index if (ch.get("sticky_red_count", 0) or 0) >= 3]
     WATCHLIST_AUTO.write_text("\n".join(auto) + ("\n" if auto else ""), encoding="utf-8")
 
     ensure_dir(SITE_DATA_DIR)
