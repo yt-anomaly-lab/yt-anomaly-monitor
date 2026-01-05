@@ -2,8 +2,11 @@
 
 const DATA_BASE = "./data";
 
-// ln/exp前提（あなたのメモ通り）
-const UPPER_MULT = 1.00;
+const PULSE_SPEED = 0.65;
+const UPPER_MULT  = 1.00;
+
+/* ★登録者しきい値（これ以下は赤/監視/表示しない） */
+const MIN_SUBSCRIBERS_FOR_WATCH = 1000;
 
 const LABEL_COLOR = {
   NORMAL: "#94a3b8",
@@ -14,19 +17,53 @@ const LABEL_COLOR = {
 
 const $ = (sel) => document.querySelector(sel);
 
+const ONDEMAND_ENDPOINT = "https://yt-ondemand.araki-69c.workers.dev/ondemand";
+
+const POLL_INTERVAL_MS = 3000;
+const POLL_TRIES_INDEX = 60;
+const POLL_TRIES_DATA  = 60;
+
 const state = {
   index: null,
   currentChannelId: null,
-  cache: new Map(),
+  mode: "views_days",
+  yLog: true,
+  inputMode: "select",
+  channelCache: new Map(),
+
+  // ★channel_id -> subscribers (number | null)
+  subsCache: new Map(),
+
+  redPlotPoints: [],
+  pulseRunning: false,
+  pulseT: 0,
+  plotEventsAttached: false,
+
+  activeChannelItem: null,
 };
 
-function safeNum(v, dflt = NaN) {
+function safeNum(v, dflt = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : dflt;
 }
 function fmtInt(n) {
   n = safeNum(n, 0);
-  return Number.isFinite(n) ? n.toLocaleString("en-US") : "?";
+  return n.toLocaleString("en-US");
+}
+function youtubeUrl(videoId) {
+  return `https://www.youtube.com/watch?v=${encodeURIComponent(videoId || "")}`;
+}
+async function fetchJson(path) {
+  const r = await fetch(path, { cache: "no-store" });
+  if (!r.ok) throw new Error(`fetch failed: ${path} (${r.status})`);
+  return await r.json();
+}
+async function fetchMaybeOk(path) {
+  const r = await fetch(path, { cache: "no-store" });
+  return r.ok;
+}
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 function escapeHtml(s) {
   return String(s ?? "")
@@ -36,23 +73,12 @@ function escapeHtml(s) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
-async function fetchJson(path) {
-  const r = await fetch(path, { cache: "no-store" });
-  if (!r.ok) throw new Error(`fetch failed: ${path} (${r.status})`);
-  return await r.json();
-}
-function pick(obj, keys) {
-  for (const k of keys) if (obj && obj[k] != null) return obj[k];
-  return undefined;
-}
 
-/* ---- index.json 互換 ---- */
 function getChannelId(ch) { return ch?.channel_id || ch?.channelId || ch?.id || ""; }
 function getChannelTitle(ch) { return ch?.title || ch?.handle || ch?.watch_key || ch?.watchKey || getChannelId(ch) || "(unknown)"; }
 function getStickyCount(ch) { return safeNum(ch?.sticky_red_count, safeNum(ch?.sticky_red, safeNum(ch?.sticky, 0))); }
 function getWorstAnomaly(ch) { return safeNum(ch?.max_anomaly_ratio, safeNum(ch?.worst_anomaly, safeNum(ch?.worst, NaN))); }
 
-/* ---- points 互換 ---- */
 function normalizePoints(pointsJson) {
   if (Array.isArray(pointsJson)) return pointsJson;
   if (pointsJson && Array.isArray(pointsJson.points)) return pointsJson.points;
@@ -64,43 +90,425 @@ function getTitle(p) { return p?.title || "(no title)"; }
 function getDays(p) { return safeNum(p?.t_days, safeNum(p?.days, NaN)); }
 function getViews(p) { return safeNum(p?.viewCount, safeNum(p?.views, NaN)); }
 function getLikes(p) { return safeNum(p?.likeCount, safeNum(p?.likes, NaN)); }
-function getLabel(p) { return String(pick(p, ["display_label", "observed_label", "label"]) ?? "NORMAL").toUpperCase(); }
 function getAnomalyRatio(p) { return safeNum(p?.anomaly_ratio, NaN); }
 function getRatioNat(p) { return safeNum(p?.ratio_nat, NaN); }
 function getRatioLike(p) { return safeNum(p?.ratio_like, NaN); }
 
-function linspace(xmin, xmax, n) {
-  if (n <= 1) return [xmin];
-  const a = [];
-  const step = (xmax - xmin) / (n - 1);
-  for (let i = 0; i < n; i++) a.push(xmin + step * i);
-  return a;
+/* ---------- 登録者数の取得（channel.json） ---------- */
+function extractSubscribersFromChannelJson(chJson) {
+  // よくあるキーを全部見る
+  const candidates = [
+    chJson?.subscriberCount,
+    chJson?.subscriber_count,
+    chJson?.subscribers,
+    chJson?.stats?.subscriberCount,
+    chJson?.statistics?.subscriberCount,
+  ];
+  for (const v of candidates) {
+    const n = safeNum(v, NaN);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
 }
 
-/* ---- baseline traces（あなたの修正済みロジック前提） ---- */
-function buildBaselineTracesViewsDays(rows, baseline) {
+async function getSubscribers(channelId) {
+  if (!channelId) return null;
+  if (state.subsCache.has(channelId)) return state.subsCache.get(channelId);
+
+  // channel.json から取る
+  try {
+    const base = `${DATA_BASE}/channels/${channelId}`;
+    const ch = await fetchJson(`${base}/channel.json`);
+    const subs = extractSubscribersFromChannelJson(ch);
+    state.subsCache.set(channelId, subs);
+    return subs;
+  } catch {
+    state.subsCache.set(channelId, null);
+    return null;
+  }
+}
+
+function isSmallChannel(subs) {
+  return Number.isFinite(subs) && subs <= MIN_SUBSCRIBERS_FOR_WATCH;
+}
+
+/* ---------- 上限線判定（upper基準） ---------- */
+function upperViewsForDays(days, baseline) {
   const a = safeNum(baseline?.a_days, NaN);
   const b = safeNum(baseline?.b_days, NaN);
   const NAT_UP = safeNum(baseline?.NAT_UPPER_RATIO, NaN) * UPPER_MULT;
-  if (!(Number.isFinite(a) && Number.isFinite(b) && Number.isFinite(NAT_UP))) return [];
+  if (!(Number.isFinite(a) && Number.isFinite(b) && Number.isFinite(NAT_UP))) return NaN;
 
-  const daysArr = rows.map(getDays).filter(v => Number.isFinite(v));
-  const tmax = Math.max(...daysArr, 1);
-  const t_line = linspace(1, tmax, 400);
+  const d = Math.max(1, safeNum(days, NaN));
+  if (!Number.isFinite(d)) return NaN;
 
-  const log_center = t_line.map(t => a + b * t);                 // ln(V)
-  const log_upper  = log_center.map(lv => lv + Math.log(NAT_UP)); // lnで +ln
-
-  const v_center = log_center.map(lv => Math.exp(lv));
-  const v_upper  = log_upper.map(lv => Math.exp(lv));
-
-  return [
-    { type:"scatter", mode:"lines", name:"expected", x:t_line, y:v_center, hoverinfo:"skip", line:{ width:2 } },
-    { type:"scatter", mode:"lines", name:"upper",    x:t_line, y:v_upper,  hoverinfo:"skip", line:{ width:2, dash:"dot" } },
-  ];
+  const log_center = a + b * d;
+  const log_upper = log_center + Math.log(NAT_UP);
+  return Math.exp(log_upper);
 }
 
-function buildBaselineTracesViewsLikes(rows, baseline) {
+function upperViewsForLikes(likes, baseline) {
+  const b0 = safeNum(baseline?.b0, NaN);
+  const b1 = safeNum(baseline?.b1, NaN);
+  const NAT_UP = safeNum(baseline?.NAT_UPPER_RATIO, NaN) * UPPER_MULT;
+  if (!(Number.isFinite(b0) && Number.isFinite(b1) && Number.isFinite(NAT_UP))) return NaN;
+
+  const L = safeNum(likes, NaN);
+  if (!(Number.isFinite(L) && L > 0)) return NaN;
+
+  const logV = b0 + b1 * Math.log(L);
+  const V_expected = Math.exp(logV);
+  return V_expected * NAT_UP; // greenより右の境界
+}
+
+/* ★色判定：登録者<=1000は RED を出さない（最大でもORANGEまで） */
+function classifyByUpper(p, baseline, subscribers) {
+  const v = getViews(p);
+  const d = getDays(p);
+  const l = getLikes(p);
+  const ar = getAnomalyRatio(p);
+
+  const upV_days  = upperViewsForDays(d, baseline);
+  const upV_likes = upperViewsForLikes(l, baseline);
+
+  const exDays  = Number.isFinite(upV_days)  ? (v > upV_days)  : false;
+  const exLikes = Number.isFinite(upV_likes) ? (v > upV_likes) : false;
+
+  if (exDays && exLikes) {
+    if (isSmallChannel(subscribers)) {
+      // 赤禁止：オレンジ or 黄に落とす
+      if (Number.isFinite(ar) && ar >= 10.0) return "ORANGE";
+      return "YELLOW";
+    }
+    return "RED";
+  }
+
+  if (exDays || exLikes) {
+    if (Number.isFinite(ar) && ar >= 10.0) return "ORANGE";
+    return "YELLOW";
+  }
+
+  return "NORMAL";
+}
+
+/* ---------- 入力モード ---------- */
+function setInputMode(mode) {
+  state.inputMode = mode;
+  $("#btnInputSelect")?.classList.toggle("active", mode === "select");
+  $("#btnInputManual")?.classList.toggle("active", mode === "manual");
+  $("#selectBox")?.classList.toggle("hidden", mode !== "select");
+  $("#manualBox")?.classList.toggle("hidden", mode !== "manual");
+}
+function showManualHint(msg) {
+  const el = $("#manualHint");
+  if (el) el.textContent = msg || "";
+}
+function normalizeManual(raw) {
+  return String(raw || "").trim();
+}
+
+function findChannelIdByManualInput(raw) {
+  const s = normalizeManual(raw);
+  if (!s) return null;
+  if (s.startsWith("UC")) return s;
+
+  const key = s.toLowerCase();
+  const arr = Array.isArray(state.index?.channels) ? state.index.channels : [];
+  const hit = arr.find(ch => {
+    const a = String(ch?.watch_key || ch?.watchKey || "").toLowerCase();
+    const b = String(ch?.handle || "").toLowerCase();
+    const c = String(ch?.title || "").toLowerCase();
+    return a === key || b === key || c.includes(key);
+  });
+  return hit ? getChannelId(hit) : null;
+}
+
+/* ---------- ondemand ---------- */
+async function startOndemand(rawInput) {
+  const payload = { channel: normalizeManual(rawInput) };
+  const r = await fetch(ONDEMAND_ENDPOINT, {
+    method: "POST",
+    mode: "cors",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const text = await r.text().catch(() => "");
+  if (!r.ok) throw new Error(`ondemand http ${r.status}: ${text}`);
+  try { return JSON.parse(text); } catch { return {}; }
+}
+
+async function refreshIndex() {
+  const index = await fetchJson(`${DATA_BASE}/index.json`);
+  state.index = index;
+  // ★非同期でsubsを埋めてから描画し直す
+  await warmupSubscribers(index);
+  renderChannelList(index);
+  renderChannelSelect(index);
+  return index;
+}
+
+async function warmupSubscribers(index) {
+  const arr = Array.isArray(index?.channels) ? index.channels : [];
+  // 多すぎると重いので、ここでは最大200件に抑える（必要なら増やす）
+  const ids = arr.map(getChannelId).filter(Boolean).slice(0, 200);
+  await Promise.all(ids.map(id => getSubscribers(id)));
+}
+
+async function waitChannelIdFromIndex(rawInput) {
+  const input = normalizeManual(rawInput);
+  const lower = input.toLowerCase();
+
+  for (let i = 0; i < POLL_TRIES_INDEX; i++) {
+    const idx = await refreshIndex().catch(() => null);
+    const arr = Array.isArray(idx?.channels) ? idx.channels : [];
+
+    const id1 = findChannelIdByManualInput(input);
+    if (id1) return id1;
+
+    const key2 = lower.startsWith("@") ? lower.slice(1) : lower;
+    const hit = arr.find(ch => {
+      const h = String(ch?.handle || "").toLowerCase().replace(/^@/, "");
+      const t = String(ch?.title || "").toLowerCase();
+      return h === key2 || t.includes(key2);
+    });
+    if (hit) return getChannelId(hit);
+
+    await sleep(POLL_INTERVAL_MS);
+  }
+  return null;
+}
+
+async function waitChannelDataReady(channelId) {
+  const base = `${DATA_BASE}/channels/${channelId}`;
+  const probe = `${base}/latest_points.json`;
+  for (let i = 0; i < POLL_TRIES_DATA; i++) {
+    const ok = await fetchMaybeOk(probe);
+    if (ok) return true;
+    await sleep(POLL_INTERVAL_MS);
+  }
+  return false;
+}
+
+/* ---------- UI: Channels（異常度ワースト順） ---------- */
+function setActiveChannelItem(el) {
+  if (state.activeChannelItem) state.activeChannelItem.classList.remove("active");
+  state.activeChannelItem = el;
+  if (state.activeChannelItem) state.activeChannelItem.classList.add("active");
+}
+
+/* ★sticky_red_count > 0 かつ 登録者>1000 のみ表示 */
+function renderChannelList(index) {
+  const root = $("#channelList");
+  if (!root) return;
+  root.innerHTML = "";
+
+  const arr0 = Array.isArray(index?.channels) ? index.channels : [];
+  const arr = arr0
+    .filter(ch => getStickyCount(ch) > 0) // sticky_red無しは出さない
+    .filter(ch => {
+      const id = getChannelId(ch);
+      const subs = state.subsCache.get(id);
+      // subs不明なら一旦表示する（後でwarmupで埋まる）
+      if (subs == null) return true;
+      return !isSmallChannel(subs);
+    })
+    .slice();
+
+  arr.sort((a,b) => {
+    const wa = getWorstAnomaly(a);
+    const wb = getWorstAnomaly(b);
+    const aa = Number.isFinite(wa) ? wa : -Infinity;
+    const bb = Number.isFinite(wb) ? wb : -Infinity;
+    return bb - aa;
+  });
+
+  if (!arr.length) {
+    root.innerHTML = `<div class="item"><div class="m">対象なし（sticky_red_count>0 かつ 登録者>${MIN_SUBSCRIBERS_FOR_WATCH}）</div></div>`;
+    return;
+  }
+
+  arr.slice(0, 80).forEach((ch) => {
+    const div = document.createElement("div");
+    div.className = "item";
+
+    const id = getChannelId(ch);
+    const title = getChannelTitle(ch);
+    const worst = getWorstAnomaly(ch);
+    const sticky = getStickyCount(ch);
+    const subs = state.subsCache.get(id);
+
+    div.innerHTML = `
+      <div class="t">${escapeHtml(title)}</div>
+      <div class="m">worst: ${Number.isFinite(worst) ? worst.toFixed(2) : "?"} / sticky_red: ${sticky}${subs!=null ? ` / subs: ${fmtInt(subs)}` : ""}</div>
+    `;
+
+    div.addEventListener("click", () => {
+      if (!id) return;
+      setActiveChannelItem(div);
+      setChannel(id).catch(console.error);
+    });
+
+    if (id && id === state.currentChannelId) setActiveChannelItem(div);
+
+    root.appendChild(div);
+  });
+}
+
+/* ★select からも登録者<=1000を除外（=リストに表示しない） */
+function renderChannelSelect(index) {
+  const sel = $("#channelSelect");
+  if (!sel) return;
+  sel.innerHTML = "";
+
+  const arr0 = Array.isArray(index?.channels) ? index.channels : [];
+  const arr = arr0.filter(ch => {
+    const id = getChannelId(ch);
+    const subs = state.subsCache.get(id);
+    if (subs == null) return true; // 不明は一旦出す（後でwarmupで更新）
+    return !isSmallChannel(subs);
+  });
+
+  arr.forEach((ch) => {
+    const opt = document.createElement("option");
+    opt.value = getChannelId(ch);
+    opt.textContent = `${getChannelTitle(ch)} (sticky_red=${getStickyCount(ch)})`;
+    sel.appendChild(opt);
+  });
+
+  sel.addEventListener("change", () => {
+    const id = sel.value;
+    if (id) setChannel(id).catch(console.error);
+  });
+}
+
+/* ---------- mode / yscale ---------- */
+function updateYScaleButtons() {
+  const btnLog = $("#btnYLog");
+  const btnLin = $("#btnYLin");
+  if (!btnLog || !btnLin) return;
+  const enabled = (state.mode === "views_days");
+  btnLog.disabled = !enabled;
+  btnLin.disabled = !enabled;
+  btnLog.classList.toggle("active", enabled && state.yLog);
+  btnLin.classList.toggle("active", enabled && !state.yLog);
+}
+function setMode(mode) {
+  state.mode = mode;
+  $("#btnViewsDays")?.classList.toggle("active", mode === "views_days");
+  $("#btnViewsLikes")?.classList.toggle("active", mode === "views_likes");
+  updateYScaleButtons();
+  if (state.currentChannelId) {
+    const cached = state.channelCache.get(state.currentChannelId);
+    if (cached) drawPlot(cached).catch(console.error);
+  }
+}
+function setYLog(on) {
+  state.yLog = !!on;
+  updateYScaleButtons();
+  if (state.mode !== "views_days") return;
+  if (state.currentChannelId) {
+    const cached = state.channelCache.get(state.currentChannelId);
+    if (cached) drawPlot(cached).catch(console.error);
+  }
+}
+
+/* ---------- load ---------- */
+async function loadChannelBundle(channelId) {
+  if (state.channelCache.has(channelId)) return state.channelCache.get(channelId);
+
+  const base = `${DATA_BASE}/channels/${channelId}`;
+  const [channel, latest, pointsJson, st] = await Promise.all([
+    fetchJson(`${base}/channel.json`).catch(() => ({})),
+    fetchJson(`${base}/latest.json`).catch(() => ({})),
+    fetchJson(`${base}/latest_points.json`).catch(() => ({})),
+    fetchJson(`${base}/state.json`).catch(() => ({})),
+  ]);
+
+  const points = normalizePoints(pointsJson);
+  const bundle = { channel, latest, points, state: st };
+  state.channelCache.set(channelId, bundle);
+
+  // ★subsCacheも埋める
+  const subs = extractSubscribersFromChannelJson(channel);
+  if (!state.subsCache.has(channelId)) state.subsCache.set(channelId, subs);
+
+  return bundle;
+}
+
+async function setChannel(channelId) {
+  // ★登録者数チェック：小規模チャンネルは「表示しない」
+  const subs = await getSubscribers(channelId);
+  if (isSmallChannel(subs)) {
+    state.currentChannelId = null;
+    showManualHint(`登録者数が${MIN_SUBSCRIBERS_FOR_WATCH}以下のため表示対象外です（subs=${subs ?? "?"}）`);
+    return;
+  }
+
+  state.currentChannelId = channelId;
+  const sel = $("#channelSelect");
+  if (sel) sel.value = channelId;
+
+  const bundle = await loadChannelBundle(channelId);
+  renderBaselineInfo(bundle);
+  await drawPlot(bundle);
+  renderRedList(bundle);
+
+  if (state.index) renderChannelList(state.index);
+}
+
+/* ---------- baseline info ---------- */
+function renderBaselineInfo(bundle) {
+  const b = bundle?.latest?.baseline || {};
+  const title = bundle?.channel?.title || state.currentChannelId || "(unknown)";
+  const a = safeNum(b?.a_days, NaN);
+  const bb = safeNum(b?.b_days, NaN);
+  const b0 = safeNum(b?.b0, NaN);
+  const b1 = safeNum(b?.b1, NaN);
+  const up = safeNum(b?.NAT_UPPER_RATIO, NaN);
+  const subs = extractSubscribersFromChannelJson(bundle?.channel || {});
+  $("#baselineInfo").textContent =
+    `Channel: ${title}` +
+    (subs!=null ? ` / subs=${fmtInt(subs)}` : "") +
+    ` / nat: ln(V)=a+b*days (a=${Number.isFinite(a)?a.toFixed(3):"?"}, b=${Number.isFinite(bb)?bb.toExponential(2):"?"})` +
+    ` / like: ln(V)=b0+b1*ln(L) (b0=${Number.isFinite(b0)?b0.toFixed(3):"?"}, b1=${Number.isFinite(b1)?b1.toFixed(3):"?"})` +
+    ` / upper=${Number.isFinite(up)?up.toFixed(2):"?"}*${UPPER_MULT.toFixed(2)}` +
+    ` / pulse=${PULSE_SPEED.toFixed(2)}`;
+}
+
+/* ---------- baseline lines ---------- */
+function linspace(xmin, xmax, n) {
+  if (n <= 1) return [xmin];
+  const arr = [];
+  const step = (xmax - xmin) / (n - 1);
+  for (let i = 0; i < n; i++) arr.push(xmin + step * i);
+  return arr;
+}
+function buildBaselineTraces(mode, rows, baseline) {
+  if (!rows.length) return [];
+  const N = 400;
+
+  if (mode === "views_days") {
+    const a = safeNum(baseline?.a_days, NaN);
+    const b = safeNum(baseline?.b_days, NaN);
+    const NAT_UP = safeNum(baseline?.NAT_UPPER_RATIO, NaN) * UPPER_MULT;
+    if (!(Number.isFinite(a) && Number.isFinite(b) && Number.isFinite(NAT_UP))) return [];
+
+    const daysArr = rows.map(getDays).filter(v => Number.isFinite(v));
+    const tmax = Math.max(...daysArr, 1);
+    const t_line = linspace(1, tmax, N);
+
+    const log_center = t_line.map(t => a + b * t);
+    const log_upper  = log_center.map(lv => lv + Math.log(NAT_UP));
+
+    const v_center = log_center.map(lv => Math.exp(lv));
+    const v_upper  = log_upper.map(lv => Math.exp(lv));
+
+    return [
+      { type:"scatter", mode:"lines", name:"expected", x:t_line, y:v_center, hoverinfo:"skip", line:{ width:2, dash:"solid" } },
+      { type:"scatter", mode:"lines", name:"upper",    x:t_line, y:v_upper,  hoverinfo:"skip", line:{ width:2, dash:"dot" } },
+    ];
+  }
+
   const b0 = safeNum(baseline?.b0, NaN);
   const b1 = safeNum(baseline?.b1, NaN);
   const NAT_UP = safeNum(baseline?.NAT_UPPER_RATIO, NaN) * UPPER_MULT;
@@ -111,14 +519,14 @@ function buildBaselineTracesViewsLikes(rows, baseline) {
   const lmin = Math.min(...likesArr);
   const lmax = Math.max(...likesArr);
 
-  const logL_line = linspace(Math.log(lmin), Math.log(lmax), 300); // ln(L)
-  const logV_line = logL_line.map(x => b0 + b1 * x);               // ln(V)
+  const logL_line = linspace(Math.log(lmin), Math.log(lmax), 300);
+  const logV_line = logL_line.map(x => b0 + b1 * x);
 
   const views_line = logV_line.map(lv => Math.exp(lv));
   const likes_line = logL_line.map(ll => Math.exp(ll));
 
   const traces = [
-    { type:"scatter", mode:"lines", name:"expected", x:views_line, y:likes_line, hoverinfo:"skip", line:{ width:2 } },
+    { type:"scatter", mode:"lines", name:"expected", x:views_line, y:likes_line, hoverinfo:"skip", line:{ width:2, dash:"solid" } },
   ];
 
   if (Number.isFinite(NAT_UP)) {
@@ -131,219 +539,382 @@ function buildBaselineTracesViewsLikes(rows, baseline) {
   return traces;
 }
 
-/* ---- UI ---- */
-function renderChannelList(index) {
-  const root = $("#channel-list");
-  if (!root) return;
-  root.innerHTML = "";
+/* ---------- pulse overlay（赤のみ。ただし小規模は赤禁止＝そもそも点が赤にならない） ---------- */
+function computeRedPlotPoints(rows, mode, baseline, subs) {
+  const red = [];
+  for (const p of rows) {
+    const label = classifyByUpper(p, baseline, subs);
+    if (label !== "RED") continue;
 
-  const arr = Array.isArray(index?.channels) ? index.channels : [];
-  const filtered = arr
-    .filter(ch => getStickyCount(ch) > 0)              // ★red0を表示しない
-    .sort((a,b) => (getStickyCount(b)-getStickyCount(a)) || (getWorstAnomaly(b)-getWorstAnomaly(a)));
+    const v = getViews(p);
+    const l = getLikes(p);
+    const d = getDays(p);
 
-  for (const ch of filtered) {
-    const id = getChannelId(ch);
-    const div = document.createElement("div");
-    div.className = "item";
-    div.setAttribute("data-channel-id", id);
+    let x, y;
+    if (mode === "views_days") { x = d; y = v; } else { x = v; y = l; }
+    if (!(x >= 0 && y > 0)) continue;
 
-    div.innerHTML = `
-      <div class="t">${escapeHtml(getChannelTitle(ch))}</div>
-      <div class="m">RED: ${getStickyCount(ch)} / worst: ${Number.isFinite(getWorstAnomaly(ch)) ? getWorstAnomaly(ch).toFixed(2) : "?"}</div>
-    `;
-
-    div.addEventListener("click", () => setChannel(id));
-    root.appendChild(div);
+    const ar = getAnomalyRatio(p);
+    const strength = Math.max(0.15, Math.min(1.0, Math.log10((Number.isFinite(ar) ? ar : 0) + 1) / 2.0));
+    red.push({ x, y, strength });
   }
-  updateActiveChannelInList();
+  return red;
 }
 
-function updateActiveChannelInList() {
-  const root = $("#channel-list");
-  if (!root) return;
-  root.querySelectorAll(".item").forEach(el => {
-    const id = el.getAttribute("data-channel-id") || "";
-    el.classList.toggle("active", id && id === state.currentChannelId);
+function syncPulseCanvasToPlot() {
+  const gd = $("#plot");
+  const c  = $("#plotPulse");
+  if (!gd || !c || !gd._fullLayout) return;
+
+  const fl = gd._fullLayout;
+  const sz = fl._size;
+  if (!sz) return;
+
+  c.style.left = `${sz.l}px`;
+  c.style.top  = `${sz.t}px`;
+  c.style.width  = `${sz.w}px`;
+  c.style.height = `${sz.h}px`;
+  c.style.position = "absolute";
+
+  const dpr = window.devicePixelRatio || 1;
+  c.width  = Math.max(1, Math.floor(sz.w * dpr));
+  c.height = Math.max(1, Math.floor(sz.h * dpr));
+}
+
+function dataToPixel(gd, x, y) {
+  const fl = gd._fullLayout;
+  if (!fl) return null;
+  const xa = fl.xaxis;
+  const ya = fl.yaxis;
+  const sz = fl._size;
+  if (!xa || !ya || !sz) return null;
+
+  let px = xa.c2p(x);
+  let py = ya.c2p(y);
+
+  if (px > sz.w + sz.l) px -= sz.l;
+  if (py > sz.h + sz.t) py -= sz.t;
+
+  return { px, py };
+}
+
+function drawPulses() {
+  const gd = $("#plot");
+  const c  = $("#plotPulse");
+  if (!gd || !c) return;
+  const ctx = c.getContext("2d");
+  if (!ctx) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.width;
+  const h = c.height;
+
+  ctx.clearRect(0, 0, w, h);
+
+  const t = state.pulseT;
+  const pts = state.redPlotPoints;
+  if (!pts || pts.length === 0) return;
+
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const xy = dataToPixel(gd, p.x, p.y);
+    if (!xy) continue;
+
+    const x = xy.px * dpr;
+    const y = xy.py * dpr;
+    if (!(x >= -50 && x <= w + 50 && y >= -50 && y <= h + 50)) continue;
+
+    const phase = (i * 17) % 97;
+    const beat = 0.5 + 0.5 * Math.sin((t * 0.22 * PULSE_SPEED) + phase) * Math.sin((t * 0.07 * PULSE_SPEED) + phase * 0.3);
+
+    const alpha = (0.10 + 0.28 * p.strength) * beat;
+    const baseR = (8 + 14 * p.strength) * dpr;
+    const gap   = (7 + 10 * p.strength) * dpr;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = "rgba(255, 80, 80, 1)";
+    ctx.lineWidth = Math.max(1, Math.floor(2 * dpr));
+    for (let k = 0; k < 3; k++) {
+      const rr = baseR + k * gap;
+      ctx.beginPath();
+      ctx.arc(x, y, rr, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+function pulseLoop() {
+  if (!state.pulseRunning) return;
+  state.pulseT += 1;
+  drawPulses();
+  requestAnimationFrame(pulseLoop);
+}
+function ensurePulseLoop() {
+  if (state.pulseRunning) return;
+  state.pulseRunning = true;
+  state.pulseT = 0;
+  requestAnimationFrame(pulseLoop);
+}
+function attachPlotEventsOnce() {
+  if (state.plotEventsAttached) return;
+  state.plotEventsAttached = true;
+
+  const gd = $("#plot");
+  if (!gd) return;
+
+  gd.on("plotly_afterplot", () => syncPulseCanvasToPlot());
+  gd.on("plotly_relayout", () => syncPulseCanvasToPlot());
+  window.addEventListener("resize", () => syncPulseCanvasToPlot());
+}
+
+/* ---------- plot ---------- */
+async function drawPlot(bundle) {
+  const points = Array.isArray(bundle?.points) ? bundle.points : [];
+  const baseline = bundle?.latest?.baseline || {};
+  const subs = extractSubscribersFromChannelJson(bundle?.channel || {});
+
+  const rows = points.filter(p => {
+    const v = getViews(p);
+    const l = getLikes(p);
+    const d = getDays(p);
+    if (!(v > 0 && l > 0)) return false;
+    if (state.mode === "views_days") return d >= 1;
+    return true;
   });
+
+  const xs = [];
+  const ys = [];
+  const hover = [];
+  const colors = [];
+  const sizes = [];
+
+  for (const p of rows) {
+    const id = getVideoId(p);
+    const title = getTitle(p);
+    const d = getDays(p);
+    const v = getViews(p);
+    const l = getLikes(p);
+
+    const rn = getRatioNat(p);
+    const rl = getRatioLike(p);
+    const ar = getAnomalyRatio(p);
+
+    let x, y;
+    if (state.mode === "views_days") { x = d; y = v; } else { x = v; y = l; }
+
+    const label = classifyByUpper(p, baseline, subs);
+
+    xs.push(x);
+    ys.push(y);
+    colors.push(LABEL_COLOR[label] || LABEL_COLOR.NORMAL);
+    sizes.push(label === "RED" ? 9 : (label === "ORANGE" ? 8 : (label === "YELLOW" ? 8 : 6)));
+
+    hover.push([
+      `<b>${escapeHtml(title)}</b>`,
+      `label: <b>${escapeHtml(label)}</b>（upper基準 / subs=${subs ?? "?"}）`,
+      `days: ${Number.isFinite(d) ? d.toFixed(2) : "?"}`,
+      `views: ${Number.isFinite(v) ? fmtInt(v) : "?"}`,
+      `likes: ${Number.isFinite(l) ? fmtInt(l) : "?"}`,
+      `ratio_nat: ${Number.isFinite(rn) ? rn.toFixed(2) : "?"}`,
+      `ratio_like: ${Number.isFinite(rl) ? rl.toFixed(2) : "?"}`,
+      `anomaly_ratio: ${Number.isFinite(ar) ? ar.toFixed(2) : "?"}`,
+      `<a href="${youtubeUrl(id)}" target="_blank" rel="noreferrer">open</a>`,
+    ].join("<br>"));
+  }
+
+  const scatter = {
+    type: "scattergl",
+    mode: "markers",
+    name: "videos",
+    x: xs,
+    y: ys,
+    text: hover,
+    hoverinfo: "text",
+    marker: { size: sizes, opacity: 0.9, color: colors },
+  };
+
+  const lines = buildBaselineTraces(state.mode, rows, baseline);
+
+  const layout = {
+    margin: { l: 60, r: 20, t: 40, b: 60 },
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0,0,0,0)",
+    showlegend: true,
+    legend: { orientation: "h", x: 0, y: 1.1 },
+  };
+
+  if (state.mode === "views_days") {
+    layout.title = { text: "再生数乖離評価", x: 0.02 };
+    layout.xaxis = { title: "days since publish", type: "linear", gridcolor: "rgba(255,255,255,0.06)" };
+    layout.yaxis = { title: "views", type: state.yLog ? "log" : "linear", gridcolor: "rgba(255,255,255,0.06)" };
+  } else {
+    layout.title = { text: "高評価乖離評価", x: 0.02 };
+    layout.xaxis = { title: "views", type: "log", gridcolor: "rgba(255,255,255,0.06)" };
+    layout.yaxis = { title: "likes", type: "log", gridcolor: "rgba(255,255,255,0.06)" };
+  }
+
+  await Plotly.newPlot("plot", [scatter, ...lines], layout, { displayModeBar:true, responsive:true });
+
+  state.redPlotPoints = computeRedPlotPoints(rows, state.mode, baseline, subs);
+  syncPulseCanvasToPlot();
+  ensurePulseLoop();
+  attachPlotEventsOnce();
+
+  updateYScaleButtons();
+  renderBaselineInfo(bundle);
 }
 
-function cssClassForLabel(label) {
-  const L = String(label || "").toUpperCase();
-  if (L === "RED") return "red";
-  if (L === "ORANGE") return "orange";
-  if (L === "YELLOW") return "yellow";
-  return "";
+/* ---------- RED list（小規模チャンネルは表示しない） ---------- */
+function normalizeRedTop(st) {
+  const raw = Array.isArray(st?.red_top) ? st.red_top : Array.isArray(st?.redTop) ? st.redTop : [];
+  return raw.map((it) => (typeof it === "string" ? { video_id: it } : it)).filter(Boolean);
 }
 
-function renderRedTop(bundle) {
-  const root = $("#red-top");
+function renderRedList(bundle) {
+  const root = $("#redList");
   if (!root) return;
   root.innerHTML = "";
 
-  const points = Array.isArray(bundle?.points) ? bundle.points : [];
-  const red = points
-    .filter(p => getLabel(p) === "RED")
-    .sort((a,b) => safeNum(getAnomalyRatio(b),0) - safeNum(getAnomalyRatio(a),0))
-    .slice(0, 30);
+  const subs = extractSubscribersFromChannelJson(bundle?.channel || {});
+  if (isSmallChannel(subs)) {
+    root.innerHTML = `<div class="item"><div class="m">登録者数が${MIN_SUBSCRIBERS_FOR_WATCH}以下のため、異常値上位は表示しません（subs=${subs ?? "?"}）</div></div>`;
+    return;
+  }
 
-  if (!red.length) {
+  const st = bundle?.state || {};
+  const redTop = normalizeRedTop(st);
+  const points = Array.isArray(bundle?.points) ? bundle.points : [];
+
+  const lookup = new Map();
+  for (const p of points) {
+    const id = getVideoId(p);
+    if (id) lookup.set(id, p);
+  }
+
+  const list = redTop.slice(0, 30).map((x) => {
+    const id = getVideoId(x) || x.video_id || x.id || "";
+    return lookup.get(id) || x;
+  });
+
+  if (!list.length) {
     root.innerHTML = `<div class="item"><div class="m">異常値が上位の動画がありません</div></div>`;
     return;
   }
 
-  for (const p of red) {
+  for (const p of list) {
+    const id = getVideoId(p) || p.video_id || "";
+    const title = getTitle(p);
+    const ar = getAnomalyRatio(p);
+    const v = getViews(p);
+    const l = getLikes(p);
+
     const div = document.createElement("div");
-    const cls = cssClassForLabel(getLabel(p));
-    div.className = `item ${cls}`.trim();
+    div.className = "item";
     div.innerHTML = `
-      <div class="t">${escapeHtml(getTitle(p))}</div>
-      <div class="m">anomaly: ${Number.isFinite(getAnomalyRatio(p)) ? getAnomalyRatio(p).toFixed(2) : "?"} / views: ${fmtInt(getViews(p))} / likes: ${fmtInt(getLikes(p))}</div>
+      <div class="t"><a href="${youtubeUrl(id)}" target="_blank" rel="noreferrer">${escapeHtml(title)}</a></div>
+      <div class="m">anomaly_ratio: ${Number.isFinite(ar) ? ar.toFixed(2) : "?"} / views: ${Number.isFinite(v) ? fmtInt(v) : "?"} / likes: ${Number.isFinite(l) ? fmtInt(l) : "?"}</div>
     `;
     root.appendChild(div);
   }
 }
 
-async function loadChannelBundle(channelId) {
-  if (state.cache.has(channelId)) return state.cache.get(channelId);
-
-  const base = `${DATA_BASE}/channels/${encodeURIComponent(channelId)}`;
-  const [latest, pointsJson] = await Promise.all([
-    fetchJson(`${base}/latest.json`).catch(() => ({})),
-    fetchJson(`${base}/latest_points.json`).catch(() => ({})),
-  ]);
-
-  const bundle = { latest, points: normalizePoints(pointsJson) };
-  state.cache.set(channelId, bundle);
-  return bundle;
-}
-
-async function setChannel(channelId) {
-  if (!channelId) return;
-  state.currentChannelId = channelId;
-  updateActiveChannelInList();
-
-  const bundle = await loadChannelBundle(channelId);
-  renderRedTop(bundle);
-  drawViewsDays(bundle);
-  drawViewsLikes(bundle);
-}
-
-function drawViewsDays(bundle) {
-  const el = $("#views-days");
-  if (!el) return;
-
-  const baseline = bundle?.latest?.baseline || {};
-  const rows = (bundle?.points || []).filter(p => getViews(p) > 0 && getLikes(p) > 0 && getDays(p) >= 1);
-
-  const x = rows.map(getDays);
-  const y = rows.map(getViews);
-  const label = rows.map(getLabel);
-
-  const trace = {
-    type: "scattergl",
-    mode: "markers",
-    name: "videos",
-    x, y,
-    text: rows.map(p => [
-      `<b>${escapeHtml(getTitle(p))}</b>`,
-      `label: <b>${escapeHtml(getLabel(p))}</b>`,
-      `days: ${Number.isFinite(getDays(p)) ? getDays(p).toFixed(2) : "?"}`,
-      `views: ${fmtInt(getViews(p))}`,
-      `likes: ${fmtInt(getLikes(p))}`,
-      `ratio_nat: ${Number.isFinite(getRatioNat(p)) ? getRatioNat(p).toFixed(2) : "?"}`,
-      `anomaly_ratio: ${Number.isFinite(getAnomalyRatio(p)) ? getAnomalyRatio(p).toFixed(2) : "?"}`,
-    ].join("<br>")),
-    hoverinfo: "text",
-    marker: {
-      size: label.map(l => (l === "RED" ? 9 : (l === "ORANGE" ? 7 : 6))),
-      color: label.map(l => LABEL_COLOR[l] || LABEL_COLOR.NORMAL),
-      opacity: 0.9
-    }
-  };
-
-  const lines = buildBaselineTracesViewsDays(rows, baseline);
-
-  const layout = {
-    title: { text: "再生数乖離評価", x: 0.02 },
-    margin: { l: 60, r: 20, t: 40, b: 60 },
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "rgba(0,0,0,0)",
-    xaxis: { title: "公開日数", type: "linear", gridcolor: "rgba(255,255,255,0.06)" },
-    yaxis: { title: "再生数", type: "linear", gridcolor: "rgba(255,255,255,0.06)" }, // ★デフォルトはリニア
-    legend: { orientation: "h", x: 0, y: 1.1 },
-    showlegend: true,
-  };
-
-  Plotly.newPlot(el, [trace, ...lines], layout, { displayModeBar: true, responsive: true });
-}
-
-function drawViewsLikes(bundle) {
-  const el = $("#views-likes");
-  if (!el) return;
-
-  const baseline = bundle?.latest?.baseline || {};
-  const rows = (bundle?.points || []).filter(p => getViews(p) > 0 && getLikes(p) > 0);
-
-  const x = rows.map(getViews);
-  const y = rows.map(getLikes);
-  const label = rows.map(getLabel);
-
-  const trace = {
-    type: "scattergl",
-    mode: "markers",
-    name: "videos",
-    x, y,
-    text: rows.map(p => [
-      `<b>${escapeHtml(getTitle(p))}</b>`,
-      `label: <b>${escapeHtml(getLabel(p))}</b>`,
-      `views: ${fmtInt(getViews(p))}`,
-      `likes: ${fmtInt(getLikes(p))}`,
-      `ratio_like: ${Number.isFinite(getRatioLike(p)) ? getRatioLike(p).toFixed(2) : "?"}`,
-      `anomaly_ratio: ${Number.isFinite(getAnomalyRatio(p)) ? getAnomalyRatio(p).toFixed(2) : "?"}`,
-    ].join("<br>")),
-    hoverinfo: "text",
-    marker: {
-      size: label.map(l => (l === "RED" ? 9 : (l === "ORANGE" ? 7 : 6))),
-      color: label.map(l => LABEL_COLOR[l] || LABEL_COLOR.NORMAL),
-      opacity: 0.9
-    }
-  };
-
-  const lines = buildBaselineTracesViewsLikes(rows, baseline);
-
-  const layout = {
-    title: { text: "高評価乖離評価", x: 0.02 },
-    margin: { l: 60, r: 20, t: 40, b: 60 },
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "rgba(0,0,0,0)",
-    xaxis: { title: "再生数", type: "log", gridcolor: "rgba(255,255,255,0.06)" },
-    yaxis: { title: "高評価数", type: "log", gridcolor: "rgba(255,255,255,0.06)" },
-    legend: { orientation: "h", x: 0, y: 1.1 },
-    showlegend: true,
-  };
-
-  Plotly.newPlot(el, [trace, ...lines], layout, { displayModeBar: true, responsive: true });
-}
-
-/* ---- boot ---- */
+/* ---------- boot ---------- */
 async function boot() {
-  const index = await fetchJson(`${DATA_BASE}/index.json?ts=${Date.now()}`);
+  $("#btnViewsDays")?.addEventListener("click", () => setMode("views_days"));
+  $("#btnViewsLikes")?.addEventListener("click", () => setMode("views_likes"));
+  $("#btnYLog")?.addEventListener("click", () => setYLog(true));
+  $("#btnYLin")?.addEventListener("click", () => setYLog(false));
+
+  $("#btnInputSelect")?.addEventListener("click", () => setInputMode("select"));
+  $("#btnInputManual")?.addEventListener("click", () => setInputMode("manual"));
+
+  $("#btnLoadInput")?.addEventListener("click", async () => {
+    const btn = $("#btnLoadInput");
+    const raw = $("#channelInput")?.value || "";
+    const input = normalizeManual(raw);
+    if (!input) { showManualHint("入力してください。"); return; }
+
+    try {
+      if (btn) btn.disabled = true;
+
+      const already = findChannelIdByManualInput(input);
+      if (already) {
+        const subs = await getSubscribers(already);
+        if (isSmallChannel(subs)) {
+          showManualHint(`登録者数が${MIN_SUBSCRIBERS_FOR_WATCH}以下のため対象外です（subs=${subs ?? "?"}）`);
+          return;
+        }
+        showManualHint("");
+        await setChannel(already);
+        return;
+      }
+
+      showManualHint("解析中…（オンデマンド起動 → Pages反映待ち）");
+      const res = await startOndemand(input);
+
+      let channelId =
+        (res && (res.channel_id || res.channelId || res.id)) ||
+        (input.startsWith("UC") ? input : null);
+
+      if (!channelId) {
+        showManualHint("解析中…（index更新待ち）");
+        channelId = await waitChannelIdFromIndex(input);
+      }
+
+      if (!channelId) { showManualHint("チャンネルが index に反映されませんでした。"); return; }
+
+      // ★subs判定：小規模なら表示しない
+      const subs = await getSubscribers(channelId);
+      if (isSmallChannel(subs)) {
+        showManualHint(`登録者数が${MIN_SUBSCRIBERS_FOR_WATCH}以下のため対象外です（subs=${subs ?? "?"}）`);
+        return;
+      }
+
+      showManualHint("解析中…（データ生成待ち）");
+      const ok = await waitChannelDataReady(channelId);
+      if (!ok) { showManualHint("データがまだ反映されていません。"); return; }
+
+      await refreshIndex().catch(() => {});
+      showManualHint("");
+      await setChannel(channelId);
+      setInputMode("select");
+    } catch (e) {
+      console.error(e);
+      showManualHint(`失敗: ${e?.message || e}`);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
+  updateYScaleButtons();
+  setInputMode("select");
+
+  const index = await fetchJson(`${DATA_BASE}/index.json`);
   state.index = index;
 
-  renderChannelList(index);
+  // ★subsを事前に埋めてから描画
+  await warmupSubscribers(index);
 
-  // 先頭（red>0でフィルタ後）を開く
+  renderChannelList(index);
+  renderChannelSelect(index);
+
+  // 初期チャンネル（小規模はスキップ）
   const arr = Array.isArray(index?.channels) ? index.channels : [];
-  const first = arr.filter(ch => getStickyCount(ch) > 0)[0] || arr[0];
-  const id = getChannelId(first);
-  if (id) await setChannel(id);
+  for (const ch of arr) {
+    const id = getChannelId(ch);
+    if (!id) continue;
+    const subs = await getSubscribers(id);
+    if (!isSmallChannel(subs)) {
+      await setChannel(id);
+      break;
+    }
+  }
 }
 
 boot().catch((e) => {
   console.error(e);
-  const root = $("#channel-list");
-  if (root) {
-    root.innerHTML = `<div class="item red"><div class="t">boot error</div><div class="m">${escapeHtml(e?.message || String(e))}</div></div>`;
-  }
+  const el = $("#baselineInfo");
+  if (el) el.textContent = `boot error: ${e?.message || e}`;
 });
