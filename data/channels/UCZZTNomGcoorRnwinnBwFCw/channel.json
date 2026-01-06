@@ -1,0 +1,38 @@
+{
+  "kind": "youtube#channel",
+  "etag": "XSgztp_3nQ1i2QtDL2yGaNDGLsU",
+  "id": "UCZZTNomGcoorRnwinnBwFCw",
+  "snippet": {
+    "title": "鶴見健太-政治の入口ch-",
+    "description": "The one who resists. protest against discrimination\n反差別、反ファシスト、反カルト。",
+    "customUrl": "@kentatsurumi263",
+    "publishedAt": "2023-06-16T14:16:59.812904Z",
+    "thumbnails": {
+      "default": {
+        "url": "https://yt3.ggpht.com/-WkW2SYSo5FaujiNkiMTACovcwrEYdDKkCHNzNYCHXDHZPLLYwgBRft0c3qL7xBlwStL3B9udw=s88-c-k-c0x00ffffff-no-rj",
+        "width": 88,
+        "height": 88
+      },
+      "medium": {
+        "url": "https://yt3.ggpht.com/-WkW2SYSo5FaujiNkiMTACovcwrEYdDKkCHNzNYCHXDHZPLLYwgBRft0c3qL7xBlwStL3B9udw=s240-c-k-c0x00ffffff-no-rj",
+        "width": 240,
+        "height": 240
+      },
+      "high": {
+        "url": "https://yt3.ggpht.com/-WkW2SYSo5FaujiNkiMTACovcwrEYdDKkCHNzNYCHXDHZPLLYwgBRft0c3qL7xBlwStL3B9udw=s800-c-k-c0x00ffffff-no-rj",
+        "width": 800,
+        "height": 800
+      }
+    },
+    "localized": {
+      "title": "鶴見健太-政治の入口ch-",
+      "description": "The one who resists. protest against discrimination\n反差別、反ファシスト、反カルト。"
+    }
+  },
+  "contentDetails": {
+    "relatedPlaylists": {
+      "likes": "",
+      "uploads": "UUZZTNomGcoorRnwinnBwFCw"
+    }
+  }
+}
