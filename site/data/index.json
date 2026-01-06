@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-01-06T12:46:45.659975+00:00",
+  "generated_at_utc": "2026-01-06T12:52:15.401271+00:00",
   "generator_version": "sanitize+probe+shortfix-20260106-01",
   "watch_count": 3,
   "warnings": [],
@@ -10,7 +10,7 @@
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 8,
-      "max_anomaly_ratio": 167.25511082766764
+      "max_anomaly_ratio": 167.25525696380453
     },
     {
       "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
@@ -18,7 +18,7 @@
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 8,
-      "max_anomaly_ratio": 167.2549880923702
+      "max_anomaly_ratio": 167.25472140557454
     },
     {
       "channel_id": "UCZZTNomGcoorRnwinnBwFCw",
@@ -26,7 +26,7 @@
       "title": "鶴見健太-政治の入口ch-",
       "sticky_red_count": 2,
       "red_top_count": 2,
-      "max_anomaly_ratio": 18.657833759779137
+      "max_anomaly_ratio": 18.611605701603043
     }
   ]
 }
