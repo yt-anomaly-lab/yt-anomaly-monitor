@@ -2,6 +2,15 @@
   "items": [
     {
       "kind": "youtube#playlistItem",
+      "etag": "dMtLOmwR-qR6prSr24g3eGpyReA",
+      "id": "VVVCOWNpclRzZV8taDAycVo2Y3RtQnp3LkdnU2dtd3FHcmFv",
+      "contentDetails": {
+        "videoId": "GgSgmwqGrao",
+        "videoPublishedAt": "2026-01-08T09:00:25Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
       "etag": "v4UeiA0IZAorpf0mGRss3QNetbQ",
       "id": "VVVCOWNpclRzZV8taDAycVo2Y3RtQnp3Li1UTVpEVzMxN3hz",
       "contentDetails": {
