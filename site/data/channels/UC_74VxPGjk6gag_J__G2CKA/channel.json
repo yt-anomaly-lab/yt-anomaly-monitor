@@ -1,0 +1,39 @@
+{
+  "kind": "youtube#channel",
+  "etag": "BavY6MKHlRLRwHRqCxi6thB611w",
+  "id": "UC_74VxPGjk6gag_J__G2CKA",
+  "snippet": {
+    "title": "アリの神様",
+    "description": "",
+    "customUrl": "@arikami5011",
+    "publishedAt": "2014-11-04T21:36:05Z",
+    "thumbnails": {
+      "default": {
+        "url": "https://yt3.ggpht.com/ytc/AIdro_l9v-z9xlzAq6uISY73GTdThzq1MPjsFucZYnjV1YWLIho=s88-c-k-c0x00ffffff-no-rj",
+        "width": 88,
+        "height": 88
+      },
+      "medium": {
+        "url": "https://yt3.ggpht.com/ytc/AIdro_l9v-z9xlzAq6uISY73GTdThzq1MPjsFucZYnjV1YWLIho=s240-c-k-c0x00ffffff-no-rj",
+        "width": 240,
+        "height": 240
+      },
+      "high": {
+        "url": "https://yt3.ggpht.com/ytc/AIdro_l9v-z9xlzAq6uISY73GTdThzq1MPjsFucZYnjV1YWLIho=s800-c-k-c0x00ffffff-no-rj",
+        "width": 800,
+        "height": 800
+      }
+    },
+    "localized": {
+      "title": "アリの神様",
+      "description": ""
+    },
+    "country": "JP"
+  },
+  "contentDetails": {
+    "relatedPlaylists": {
+      "likes": "",
+      "uploads": "UU_74VxPGjk6gag_J__G2CKA"
+    }
+  }
+}
