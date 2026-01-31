@@ -1,0 +1,38 @@
+{
+  "kind": "youtube#channel",
+  "etag": "IQBJTmDE6wxoU62_Suv1XZAsqkk",
+  "id": "UCEs1g8h1h5rfQ0VyAarkZnw",
+  "snippet": {
+    "title": "難波文男",
+    "description": "",
+    "customUrl": "@難波文男-t8s",
+    "publishedAt": "2016-03-07T12:51:10Z",
+    "thumbnails": {
+      "default": {
+        "url": "https://yt3.ggpht.com/rDuKhV3YERIJc-BGkgJ8OM3VC_f98_GfP6f3NcX_6CdaHf359JFAKRhFblZipY-odE-GT0il2Eg=s88-c-k-c0x00ffffff-no-rj",
+        "width": 88,
+        "height": 88
+      },
+      "medium": {
+        "url": "https://yt3.ggpht.com/rDuKhV3YERIJc-BGkgJ8OM3VC_f98_GfP6f3NcX_6CdaHf359JFAKRhFblZipY-odE-GT0il2Eg=s240-c-k-c0x00ffffff-no-rj",
+        "width": 240,
+        "height": 240
+      },
+      "high": {
+        "url": "https://yt3.ggpht.com/rDuKhV3YERIJc-BGkgJ8OM3VC_f98_GfP6f3NcX_6CdaHf359JFAKRhFblZipY-odE-GT0il2Eg=s800-c-k-c0x00ffffff-no-rj",
+        "width": 800,
+        "height": 800
+      }
+    },
+    "localized": {
+      "title": "難波文男",
+      "description": ""
+    }
+  },
+  "contentDetails": {
+    "relatedPlaylists": {
+      "likes": "",
+      "uploads": "UUEs1g8h1h5rfQ0VyAarkZnw"
+    }
+  }
+}
