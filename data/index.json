@@ -1,24 +1,24 @@
 {
-  "generated_at_utc": "2026-02-15T02:22:38.967887+00:00",
+  "generated_at_utc": "2026-02-22T02:11:18.979709+00:00",
   "generator_version": "sanitize+probe+shortfix-20260106-01",
   "watch_count": 2,
   "warnings": [],
   "channels": [
     {
       "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
-      "watch_key": "@trueman_project",
-      "title": "trueman_project",
-      "sticky_red_count": 8,
-      "red_top_count": 8,
-      "max_anomaly_ratio": 171.86322372396288
-    },
-    {
-      "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
       "watch_key": "UCB9cirTse_-h02qZ6ctmBzw",
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 8,
-      "max_anomaly_ratio": 171.86307899050541
+      "max_anomaly_ratio": 170.59456127852238
+    },
+    {
+      "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
+      "watch_key": "@trueman_project",
+      "title": "trueman_project",
+      "sticky_red_count": 8,
+      "red_top_count": 8,
+      "max_anomaly_ratio": 170.59456126882597
     }
   ]
 }
