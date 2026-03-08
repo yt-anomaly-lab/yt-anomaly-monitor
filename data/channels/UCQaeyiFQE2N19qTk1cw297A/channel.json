@@ -1,0 +1,38 @@
+{
+  "kind": "youtube#channel",
+  "etag": "6gsRkwANqtI1uRvcguhhMrfxV14",
+  "id": "UCQaeyiFQE2N19qTk1cw297A",
+  "snippet": {
+    "title": "うりなり",
+    "description": "AIで作成した動画を載せています\n",
+    "customUrl": "@urinari_x",
+    "publishedAt": "2024-07-16T11:02:25.223232Z",
+    "thumbnails": {
+      "default": {
+        "url": "https://yt3.ggpht.com/1oZvoGrgLT4591TQ1s_85_L1MEzuN3q_GaJpUMm6KAAqhBA3uVGsIWc5uMREc2iQi2stw7qA=s88-c-k-c0x00ffffff-no-rj",
+        "width": 88,
+        "height": 88
+      },
+      "medium": {
+        "url": "https://yt3.ggpht.com/1oZvoGrgLT4591TQ1s_85_L1MEzuN3q_GaJpUMm6KAAqhBA3uVGsIWc5uMREc2iQi2stw7qA=s240-c-k-c0x00ffffff-no-rj",
+        "width": 240,
+        "height": 240
+      },
+      "high": {
+        "url": "https://yt3.ggpht.com/1oZvoGrgLT4591TQ1s_85_L1MEzuN3q_GaJpUMm6KAAqhBA3uVGsIWc5uMREc2iQi2stw7qA=s800-c-k-c0x00ffffff-no-rj",
+        "width": 800,
+        "height": 800
+      }
+    },
+    "localized": {
+      "title": "うりなり",
+      "description": "AIで作成した動画を載せています\n"
+    }
+  },
+  "contentDetails": {
+    "relatedPlaylists": {
+      "likes": "",
+      "uploads": "UUQaeyiFQE2N19qTk1cw297A"
+    }
+  }
+}
