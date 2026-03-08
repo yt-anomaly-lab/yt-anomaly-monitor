@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-03-01T02:25:09.624210+00:00",
+  "generated_at_utc": "2026-03-08T02:09:20.713888+00:00",
   "generator_version": "sanitize+probe+shortfix-20260106-01",
   "watch_count": 2,
   "warnings": [],
@@ -10,7 +10,7 @@
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 8,
-      "max_anomaly_ratio": 167.67479309662352
+      "max_anomaly_ratio": 166.3808693185918
     },
     {
       "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
@@ -18,7 +18,7 @@
       "title": "trueman_project",
       "sticky_red_count": 8,
       "red_top_count": 8,
-      "max_anomaly_ratio": 167.4984531781763
+      "max_anomaly_ratio": 166.38086698915794
     }
   ]
 }
