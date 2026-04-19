@@ -1,14 +1,14 @@
 {
   "generator_version": "sanitize+probe+shortfix-20260106-01",
-  "run_at_utc": "2026-04-12T02:37:58.789178+00:00",
+  "run_at_utc": "2026-04-19T02:43:35.085262+00:00",
   "baseline": {
     "nat_quantile": 0.6,
-    "a_days": 6.201861886179848,
-    "b_days": 0.0048524174289896185,
+    "a_days": 6.175159573280054,
+    "b_days": 0.004831350538174528,
     "NAT_UPPER_RATIO": 3.0,
     "NAT_BIG_RATIO": 10.0,
-    "b0": 2.3907646505917293,
-    "b1": 1.0517526769984595,
+    "b0": 2.376097755810126,
+    "b1": 1.0546436647966255,
     "LIKES_SUSPECT_RATIO": 3.0,
     "LIKES_BIG_RATIO": 10.0,
     "fit_mask": {
