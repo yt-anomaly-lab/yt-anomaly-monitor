@@ -1,32 +1,20 @@
 {
-  "generated_at_utc": "2026-05-24T03:38:03.124645+00:00",
+  "generated_at_utc": "2026-05-31T03:54:04.249403+00:00",
   "generator_version": "sanitize+probe+shortfix-20260106-01",
   "watch_count": 3,
-  "warnings": [],
-  "channels": [
+  "warnings": [
     {
-      "channel_id": "UC_hjHmi-ODGhHlSzD16p5Pw",
-      "watch_key": "UC_hjHmi-ODGhHlSzD16p5Pw",
-      "title": "家入ポポ / Popo Channel【ななしいんく】",
-      "sticky_red_count": 60,
-      "red_top_count": 60,
-      "max_anomaly_ratio": 212.21581995888755
-    },
-    {
-      "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
       "watch_key": "@trueman_project",
-      "title": "trueman_project",
-      "sticky_red_count": 10,
-      "red_top_count": 10,
-      "max_anomaly_ratio": 152.71916313350212
+      "error": "404 Client Error: Not Found for url: https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=UUB9cirTse_-h02qZ6ctmBzw&maxResults=50&pageToken=EAAaHlBUOkNESWlFRVF4TlRrMVJEWXpRakU0TVVSRE4wWQ&key=AIzaSyAM1dvctGj7P9f9-bF6f_tife8p58MfwNY"
     },
     {
-      "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
       "watch_key": "UCB9cirTse_-h02qZ6ctmBzw",
-      "title": "trueman_project",
-      "sticky_red_count": 10,
-      "red_top_count": 10,
-      "max_anomaly_ratio": 151.8621190405691
+      "error": "404 Client Error: Not Found for url: https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=UUB9cirTse_-h02qZ6ctmBzw&maxResults=50&pageToken=&key=AIzaSyAM1dvctGj7P9f9-bF6f_tife8p58MfwNY"
+    },
+    {
+      "watch_key": "UC_hjHmi-ODGhHlSzD16p5Pw",
+      "error": "404 Client Error: Not Found for url: https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=UU_hjHmi-ODGhHlSzD16p5Pw&maxResults=50&pageToken=EAAaHlBUOkNHUWlFRGsyTWtJM1JEa3dOVE0wTnpWRVF6SQ&key=AIzaSyAM1dvctGj7P9f9-bF6f_tife8p58MfwNY"
     }
-  ]
+  ],
+  "channels": []
 }
