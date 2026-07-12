@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-07-05T03:25:26.007805+00:00",
+  "generated_at_utc": "2026-07-12T02:46:11.323900+00:00",
   "generator_version": "sanitize+probe+shortfix-20260106-01",
   "watch_count": 3,
   "warnings": [],
@@ -8,9 +8,9 @@
       "channel_id": "UC_hjHmi-ODGhHlSzD16p5Pw",
       "watch_key": "UC_hjHmi-ODGhHlSzD16p5Pw",
       "title": "家入ポポ / Popo Channel【ななしいんく】",
-      "sticky_red_count": 62,
-      "red_top_count": 62,
-      "max_anomaly_ratio": 231.70905070743663
+      "sticky_red_count": 63,
+      "red_top_count": 63,
+      "max_anomaly_ratio": 235.4638802581044
     },
     {
       "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
@@ -18,7 +18,7 @@
       "title": "trueman_project",
       "sticky_red_count": 10,
       "red_top_count": 10,
-      "max_anomaly_ratio": 150.93076512420356
+      "max_anomaly_ratio": 150.93154948426476
     },
     {
       "channel_id": "UCB9cirTse_-h02qZ6ctmBzw",
@@ -26,7 +26,7 @@
       "title": "trueman_project",
       "sticky_red_count": 10,
       "red_top_count": 10,
-      "max_anomaly_ratio": 150.93076512420356
+      "max_anomaly_ratio": 150.93153578521935
     }
   ]
 }
