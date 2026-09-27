@@ -2,6 +2,24 @@
   "items": [
     {
       "kind": "youtube#playlistItem",
+      "etag": "OGm1t2lkGzmkh_P0GCOHKuzGsXo",
+      "id": "VVVCOWNpclRzZV8taDAycVo2Y3RtQnp3Llh3aHJJNkNkUUNJ",
+      "contentDetails": {
+        "videoId": "XwhrI6CdQCI",
+        "videoPublishedAt": "2026-09-24T09:05:27Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
+      "etag": "4NhS4pKjpMtwpsdAuL_ZQ2k9Crk",
+      "id": "VVVCOWNpclRzZV8taDAycVo2Y3RtQnp3LkxpdjZmdmoyV2hR",
+      "contentDetails": {
+        "videoId": "Liv6fvj2WhQ",
+        "videoPublishedAt": "2026-09-24T09:00:24Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
       "etag": "yT2MlxGAwhQgSNBcYc6DY0Tv_08",
       "id": "VVVCOWNpclRzZV8taDAycVo2Y3RtQnp3LlJVemUtMHpUQWVR",
       "contentDetails": {

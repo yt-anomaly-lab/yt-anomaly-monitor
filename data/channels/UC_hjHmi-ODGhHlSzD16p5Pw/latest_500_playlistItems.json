@@ -2,6 +2,69 @@
   "items": [
     {
       "kind": "youtube#playlistItem",
+      "etag": "q5vvbjkYk0Z7UhHg_VqvxG56Sko",
+      "id": "VVVfaGpIbWktT0RHaEhsU3pEMTZwNVB3LkhJbmVaZDFibmxv",
+      "contentDetails": {
+        "videoId": "HIneZd1bnlo",
+        "videoPublishedAt": "2026-09-27T03:32:20Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
+      "etag": "_mdyV48V7UZ_JxrNJu6iucLUoc8",
+      "id": "VVVfaGpIbWktT0RHaEhsU3pEMTZwNVB3LlNVU1RfNkZpY0Rz",
+      "contentDetails": {
+        "videoId": "SUST_6FicDs",
+        "videoPublishedAt": "2026-09-26T13:56:50Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
+      "etag": "jnHNCmPA722y3iIQZADi-crMPAE",
+      "id": "VVVfaGpIbWktT0RHaEhsU3pEMTZwNVB3Lkw5ZmppRTc4aWhr",
+      "contentDetails": {
+        "videoId": "L9fjiE78ihk",
+        "videoPublishedAt": "2026-09-24T18:23:21Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
+      "etag": "g6WVIj-9YUT3muiXACLKIAZMM28",
+      "id": "VVVfaGpIbWktT0RHaEhsU3pEMTZwNVB3LmlnQWZWaF9mcFE0",
+      "contentDetails": {
+        "videoId": "igAfVh_fpQ4",
+        "videoPublishedAt": "2026-09-23T17:53:20Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
+      "etag": "amSDh6MOlFK6lGOlFA48yR_AiX4",
+      "id": "VVVfaGpIbWktT0RHaEhsU3pEMTZwNVB3LmJRaExtbF81c2FV",
+      "contentDetails": {
+        "videoId": "bQhLml_5saU",
+        "videoPublishedAt": "2026-09-22T17:17:50Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
+      "etag": "bpfKN_Li48O27JfpxFMmP_gO6fo",
+      "id": "VVVfaGpIbWktT0RHaEhsU3pEMTZwNVB3LmkyRlgyLTZZNF9n",
+      "contentDetails": {
+        "videoId": "i2FX2-6Y4_g",
+        "videoPublishedAt": "2026-09-21T17:33:28Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
+      "etag": "fcJtjiQBRnx_-vVLWQjj1ZIiq1U",
+      "id": "VVVfaGpIbWktT0RHaEhsU3pEMTZwNVB3LklYbkxVaS16c1gw",
+      "contentDetails": {
+        "videoId": "IXnLUi-zsX0",
+        "videoPublishedAt": "2026-09-20T17:47:58Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
       "etag": "dPOGg1Uevj-sRx4gRzRDAuQcmEw",
       "id": "VVVfaGpIbWktT0RHaEhsU3pEMTZwNVB3Lk1tQ0FDYUJJQmxN",
       "contentDetails": {
@@ -4435,69 +4498,6 @@
       "contentDetails": {
         "videoId": "cWyxW9cfl_E",
         "videoPublishedAt": "2025-02-20T15:11:46Z"
-      }
-    },
-    {
-      "kind": "youtube#playlistItem",
-      "etag": "1KYD1RxN9mgguIevTNXKrpQnigo",
-      "id": "VVVfaGpIbWktT0RHaEhsU3pEMTZwNVB3LmJ0blpWNnhUd1Vj",
-      "contentDetails": {
-        "videoId": "btnZV6xTwUc",
-        "videoPublishedAt": "2025-02-19T14:37:04Z"
-      }
-    },
-    {
-      "kind": "youtube#playlistItem",
-      "etag": "X6HV7c7IR9jdFEqLIb3cT7yKPIM",
-      "id": "VVVfaGpIbWktT0RHaEhsU3pEMTZwNVB3LlJIU245dzY2RXdZ",
-      "contentDetails": {
-        "videoId": "RHSn9w66EwY",
-        "videoPublishedAt": "2025-02-18T12:15:19Z"
-      }
-    },
-    {
-      "kind": "youtube#playlistItem",
-      "etag": "tGjxMVIdMuCfuG3lybekJmTVvfY",
-      "id": "VVVfaGpIbWktT0RHaEhsU3pEMTZwNVB3LkR2WjBqVE8zTHpB",
-      "contentDetails": {
-        "videoId": "DvZ0jTO3LzA",
-        "videoPublishedAt": "2025-02-18T01:43:52Z"
-      }
-    },
-    {
-      "kind": "youtube#playlistItem",
-      "etag": "u5yjF436bbdtHnhwWYtN3P3WaEI",
-      "id": "VVVfaGpIbWktT0RHaEhsU3pEMTZwNVB3Lll1S2s5dnN3WF9z",
-      "contentDetails": {
-        "videoId": "YuKk9vswX_s",
-        "videoPublishedAt": "2025-02-17T16:40:12Z"
-      }
-    },
-    {
-      "kind": "youtube#playlistItem",
-      "etag": "rTFtOpXIM39Q_kWjKbTtcWwKtzU",
-      "id": "VVVfaGpIbWktT0RHaEhsU3pEMTZwNVB3LklZaDExdk4zSFE0",
-      "contentDetails": {
-        "videoId": "IYh11vN3HQ4",
-        "videoPublishedAt": "2025-02-16T14:49:05Z"
-      }
-    },
-    {
-      "kind": "youtube#playlistItem",
-      "etag": "_Z72c1s5T6t4sY7Rueq6fb976ZI",
-      "id": "VVVfaGpIbWktT0RHaEhsU3pEMTZwNVB3LnFuZzlQUGZlRndV",
-      "contentDetails": {
-        "videoId": "qng9PPfeFwU",
-        "videoPublishedAt": "2025-02-16T03:29:13Z"
-      }
-    },
-    {
-      "kind": "youtube#playlistItem",
-      "etag": "OssYkfWGvPDT4mWO7NThp4JZNGk",
-      "id": "VVVfaGpIbWktT0RHaEhsU3pEMTZwNVB3Lk5jMkljaXVieGpJ",
-      "contentDetails": {
-        "videoId": "Nc2IciubxjI",
-        "videoPublishedAt": "2025-02-14T15:01:19Z"
       }
     }
   ]
